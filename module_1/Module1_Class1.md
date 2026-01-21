@@ -21,7 +21,7 @@ output:
 **Modular Organization:** 
 
 * Module 1: Smoking and the risk of disease
-* Module 2: Building predictive models
+* Module 2: Model building and prediction
 * Module 3: Individual public health data analysis projects!
 
 **Computation:** Statistical software R
@@ -48,6 +48,7 @@ output:
 * **On Wednesdays:** 
     * After completing new content for the week, we will give you time in class to work on the next week's assignment
     * Use the class time to work with your peers and/or ask us questions while you work
+    * We will also take this time to have one-on-one meetings with you to provide personalized feedback
 
 **Communicating with instructor:**
 
@@ -70,7 +71,7 @@ output:
 
 When you are ready to submit your assignment, do ALL of the following:
 
-* First, knit your .Rmd file to see if it will compile.  If it doesn't knit, you can still follow the steps below to submit your assignment, but please try to resolve the knitting issues before you submit.  You can reach out to use at phbiostats@jhu.edu for help!
+* First, knit your .Rmd file to see if it will compile.  If it doesn't knit, you can still follow the steps below to submit your assignment, but please try to resolve the knitting issues before you submit.  You can reach out to use at hdap@jhu.edu for help!
 * Next you need to **commit** the changes you've made to the document.  Click the colorful Git button at the top of the RStudio window and select "Commit" from the menu.
 * In the window that opens, **stage** your changes by clicking the check box next to the `Asst0-1.Rmd` file.
 * In the "Commit message" box, type a short description of what changes you've made, something like: `Completed assignment`
@@ -700,7 +701,7 @@ nmes_data %>%
 
 ### Bar graphs from tables
 
-Both these bar graphs and these tables can show the same information about the relationship between smoking and disease.  However you can have more control of what it is your bar graph if you first create a table with the values you want to graph and then graph from this table instead of the entire data set!
+Both these bar graphs and these tables can show the same information about the relationship between smoking and disease.  However you can have more control of what it is your bar graph shows if you first create a table with the values you want to graph and then graph from this table instead of the entire data set!
 
 
 ``` r
