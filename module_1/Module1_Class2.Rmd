@@ -1,0 +1,587 @@
+---
+title: "Class 1-2: Discussion of data displays for Question 1-1"
+author: "Health Data Analysis Practicum (AS.280.347)"
+date: "January 26, 2026"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: false
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+## Preliminaries
+
+First we load the packages that we will be using in this document.  It's good practice to load packages at the beginning so they are all in the same place.  If you decide later you need an additional package, add it to the top of the document!
+```{r libraries}
+library(tidyverse)  # core group of tidyverse packages
+library(kableExtra)  # to make nice tables
+```
+
+## Module 1: Smoking and the risk of disease
+
+Questions of interest:
+
+* **Question 1.1: ** How does the risk of disease compare for smokers and otherwise similar non-smokers?
+
+<center>
+![](Q1_dag.png){width=500px}
+</center>
+
+* **Queston 1.2: ** Does the contribution of smoking to the risk of disease vary by sex or socio-economic status (SES)?
+
+<center>
+![](Q2_dag.png){width=500px}
+</center>
+
+To address each question we want:
+
+* A data display (graph or table)
+* A statistical analysis (with interprepration)
+
+We will answer these questions using data from the National Medical Expenditures Survey (NMES)
+
+## Discussion of NMES data displays for Question 1-1
+
+As a group, we will discuss the following 6 displays.  For each display, we will answer the following questions:
+
+* Does this display effectively answer our question on interest: *How does the risk of disease compare for smokers and otherwise similar non-smokers?*
+     * Does it clearly show the risk of disease?
+     * Does it allow you to easily compare smokers to non-smokers? Why or why not?
+     * Does it account for "otherwise similar"? Why or why not? Is there a major variable that is not included in the plot that you think is important or which may be explaining some of the patterns you see in the display?
+     * What would your answer to the question be based on this display?  Does this answer match your intuition?
+* How can the display be improved to more clearly answer our question of interest?
+* What is something that you like about the display?
+* Look at the code used to create the display. Is it easy to read and understand? Is there extra code that is not used?
+* Pick a couple of displays and add code to make the improvements you have in mind.
+
+**If you have additional time,** scroll through the post of all student work and make note of anything that you especially like about what any of your peers has done: https://piazza.com/class/m5lijvm8x3960v/post/7
+
+### Display 1
+
+```{r example1, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+### Recode eversmk into Never smoker and Ever smoker and recode chd5 into No chd and chd
+nmes_data <- nmes_data %>%
+  mutate(eversmk = factor(eversmk, levels = c("0", "1"), labels = c("Never smoker", "Ever smoker")),
+chd5 = factor(chd5,levels = c("0", "1"), labels = c("No chd", "chd")),
+### Create new column to split individuals in age groups
+    age_group = ifelse(age < 60, "Under 60", "60+")
+         )
+
+ggplot(data=nmes_data) + geom_bar(mapping = aes(x=chd5, fill=eversmk), position="fill") + facet_wrap(~age_group)
+
+
+```
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example1improve}
+
+```
+
+
+### Display 2
+
+```{r example2, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  mutate(eversmk = factor(eversmk, 
+                          levels = c("0", "1"), 
+                          labels = c("Never smoker", "Ever smoker")),
+         lc5 = factor(lc5, 
+                      levels = c("0", "1"), 
+                      labels = c("No LC", "LC")),
+         
+         female = factor(female, 
+                         levels = c("0", "1"), 
+                         labels = c("Male", "Female")),
+         
+         age = cut (age, 
+                    breaks = c(0, 20, 40, 60, Inf), 
+                    labels = c("1-20", "21-40", "41-60", "61+"))
+
+         )
+
+
+my_table <- nmes_data %>%
+  count(age, female, lc5, eversmk) %>%
+  group_by(age, female, eversmk) %>%
+  mutate(prop = n/sum(n))
+
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = lc5), stat = "identity", position = "stack") +
+  facet_grid(female ~ age)
+
+```
+
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example2improve}
+
+```
+
+
+### Display 3
+
+
+```{r example3, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  filter(bmi > 0) %>%
+  mutate(
+    eversmk = factor(eversmk, levels = c(0, 1), labels = c("Never smoker", "Ever smoker")),
+    lc5     = factor(lc5,     levels = c(0, 1), labels = c("No LC", "LC")),
+    bmi_cat = case_when(
+      bmi < 20                ~ "0–20",
+      bmi >= 20 & bmi < 25    ~ "20–25",
+      bmi >= 25 & bmi < 30    ~ "25–30",
+      bmi >= 30               ~ "30+",
+    ),
+    bmi_cat = factor(bmi_cat, levels = c("0–20", "20–25", "25–30", "30+"))
+  ) %>%
+  filter(!is.na(bmi_cat))
+
+ggplot(nmes_data) +
+  geom_bar(aes(x = lc5, fill = eversmk), position = "fill") +
+  facet_wrap(~ bmi_cat) 
+```
+
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example3improve}
+
+```
+
+
+### Display 4
+
+```{r example4, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  mutate(
+    smoker = factor(
+      if_else(eversmk == 1, "Ever smoker", "Never smoker"),
+      levels = c("Never smoker", "Ever smoker")
+    ),
+    chd = chd5
+  )
+
+### Create age groups to compare smokers and non-smokers of similar age
+
+nmes_data <- nmes_data %>%
+  mutate(
+    age_group = cut(
+      age,
+      breaks = c(0, 40, 55, 70, Inf),
+      labels = c("<40", "40–54", "55–69", "70+")
+    )
+  )
+
+plot_data <- nmes_data %>%
+  group_by(age_group, smoker) %>%
+  summarize(
+    disease_risk = mean(chd, na.rm = TRUE),
+    .groups = "drop" #ungroup the data after summarizing
+  )
+
+### Plot coronary heart disease risk by smoking status, stratified by age
+
+ggplot(plot_data, aes(x = smoker, y = disease_risk, fill = smoker)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~ age_group) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Coronary heart disease risk by smoking status and age",
+    x = "Smoking status",
+    y = "Proportion with coronary heart disease"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example4improve}
+
+```
+
+
+### Display 5
+
+```{r example5, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  mutate(educate = factor(educate,
+                    levels = c("1", "2", "3", "4"),
+                    labels = c("College graduate", "Some college", "HS Grad", "Other")),
+         female = factor(female, 
+                         levels = c("0", "1"),
+                         labels = c("Male", "Female")),
+         eversmk = factor(eversmk, 
+                          levels = c("0", "1"), 
+                          labels = c("Never smoker", "Ever smoker")),
+         lc5 = factor(lc5, 
+                      levels = c("0", "1"), 
+                      labels = c("No LC", "LC")),
+         poor = factor(poor,
+                       levels = c("0", "1"),
+                       labels = c("Not poor", "Poor"))
+         )
+
+ggplot(data = nmes_data) + 
+  geom_bar(mapping = aes(x = lc5, fill = eversmk), position = "fill") +
+  facet_grid(female~educate)
+
+```
+
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example5improve}
+
+```
+
+
+
+### Display 6
+
+This wasn't one of yours, but I wanted to include an example with a table.
+
+```{r example6, echo = FALSE}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  mutate(eversmk = factor(eversmk, 
+                          levels = c("0", "1"), 
+                          labels = c("Never smoker", "Ever smoker")),
+         lc5 = factor(lc5, 
+                      levels = c("0", "1"), 
+                      labels = c("No LC", "LC")),
+         female = factor(female, 
+                         levels = c("0", "1"), 
+                         labels = c("Male", "Female")))
+# Table stratified by gender
+my_table <- nmes_data %>%
+  count(lc5, eversmk, female) %>%
+  group_by(eversmk, female) %>%
+  mutate(prop = n/sum(n)) %>%
+  rename(
+    "Smoking Status" = eversmk, 
+    "Lung Cancer (LC) Status" = lc5,
+    "Gender" = female
+  )
+my_table %>%
+  kable(digits = 3) %>%
+  kable_styling()
+
+
+```
+
+Here is a code chunk to make any modifications you would like to see:
+
+```{r example6improve}
+
+```
+
+
+
+## R notes based Assignment 1-1
+
+### Recoding variables
+
+Since we aren't sure which variables we will be using to make our plots and fit our models later, we want to recode all of the variables of the data set rather than just the variables we will use in our data display.
+
+Remember that this is our codebook:
+
+* `age`: age in years
+* `female`: 1=female, 0=male
+* `eversmk`: 1=has ever been a smoker, 0=has never been a smoker
+* `current`: 1=current smoker, 0=not current smoker (but formerly smoked), NA if eversmk=0
+* `former`: 1=former smoker, 0=not former smoker
+* `packyears`: reported packs per year of smoking (0 if eversmk = No)
+* `yearsince`: years since quitting smoking (0 if eversmk = No)
+* `totalexp`: self-reported total medical expenditures for 1987
+* `lc5`: 1=lung cancer, laryngeal cancer or COPD, 0=none of these
+* `chd5`: 1=coronary heart disease, stroke, and other cancers (oral, esophageal, stomach, kidney and bladder), 0=none of these
+* `beltuse`: 1=rare, 2=some, 3=always/almost always
+* `educate`: 1=college graduatee, 2=some college, 3=HS grad, 4=other
+* `marital`: 1=married, 2=widowed, 3=divorced, 4=separated, 5=never married
+* `poor`: 1=poor, 0=not poor
+
+At the beginning of your .Rmd file, you should recode **ALL** of these variables to have meaningful labels.
+```{r recodeexample}
+nmes_data <- read_csv("module_1/nmesUNPROC.csv")
+
+nmes_data <- nmes_data %>%
+  mutate(eversmk = factor(eversmk, 
+                          levels = c("0", "1"), 
+                          labels = c("Never smoker", "Ever smoker")),
+         lc5 = factor(lc5, 
+                      levels = c("0", "1"), 
+                      labels = c("No LC", "LC")),
+         chd5 = factor(chd5, 
+                       levels = c("0", "1"), 
+                       labels = c("No CHD", "CHD"))
+         )
+
+#etc, fill in the rest of appropriate variables here
+```
+
+A couple of things to note: 
+1. It is easier to read your code if you have one call to mutate, but recode each variable on its own lines.
+2. Think about the order of the levels. You may want to ensure that a particular level is the "baseline" for that variable, or order things in a more intuitive way than might happen by default.
+
+### Combining LC and CHD into a single disease variable
+
+If we really want to talk about the risk of **disease** where disease can be either LC or CHD, we want to combine into a single disease category.  This is what we called *major smoking-caused disease*, MSCD, in Public Health Biostatistics.
+
+Here we will create a new variable based on `lc5 == "LC" | chd5 == "CHD"`, which stands for `lc5 == "LC"` OR `chd5 == "CHD"`.  The `|` symbol means that only one of the conditions needs to be true in order for the whole statement to be true.  So basically, if either a person has LC OR a person has CHD, we will designate them as having a diease.
+
+```{r makemscd}
+nmes_data <- nmes_data %>%
+  mutate(disease = factor(lc5 == "LC" | chd5 == "CHD", 
+                          levels=c(FALSE, TRUE), 
+                          labels=c("No disease", "Disease")))
+
+
+# We can take a look at the combined variable with the two individual variables
+nmes_data %>%
+  count(disease, lc5, chd5)
+```
+
+Note: You need to refer to the levels of `lc5` and `chd5` as they are coded at the time that this piece of code is run, i.e., whether you have already recoded them or not.
+
+### Filtering tables/graphs and adding value labels
+
+One thing that might enhance some of the bar graphs would be to include the actual proportion values as text on the graph.  You can have more control of what is in your bar graph if you first create a table with the values you want to graph and then graph from this table instead of the entire data set!
+
+```{r tableexample1}
+my_table <- nmes_data %>%
+  count(eversmk, disease) %>%
+  group_by(eversmk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+```
+
+Now we've created a table that gives the proportion of those with and without disease in each smoking category.  (Note the proportions add up to 1 within the smoking groups!)
+
+We can now graph this by setting the `y` aesthetic to the `prop` variable in this table and choosing `stat = "identity"` within `geom_bar()` to say we are directly giving the `y` value to be plotted rather than having R calculate either the proportion or count for us.
+```{r plotfromtable}
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge")
+```
+
+Now we can do things like filter out the "No disease" part to leave only the risk of disease and not the risk of no disease on the graph:
+```{r plotfromtable2}
+my_table %>%
+  filter(disease == "Disease") %>%
+  ggplot() + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity")
+```
+
+And add value labels to the plot using `geom_text()`:
+```{r addvalues1}
+my_table %>%
+  filter(disease == "Disease") %>%
+  ggplot() + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity") + 
+  geom_text(aes(x = eversmk, y = prop, label = prop))
+```
+
+And you can control the display of digits on your graph by controlling the digits in your table:
+```{r addvalues2}
+my_table <- nmes_data %>%
+  count(eversmk, disease) %>%
+  group_by(eversmk) %>%
+  mutate(percent =round(n/sum(n)*100,1))
+
+my_table
+
+my_table %>%
+  filter(disease == "Disease") %>%
+  ggplot() + 
+  geom_bar(aes(x = eversmk, y = percent, fill = disease), stat = "identity") + 
+  geom_text(aes(x = eversmk, y = percent, label = percent), vjust = -0.8)
+```
+
+
+#### Quick aside: including 0's in a table
+
+If you want your table to include the combinations of levels that have no people in them, you need to first group your data, and include the argument `.drop = FALSE` to the call to `group_by`:
+
+```{r include0}
+
+nmes_data %>%
+  group_by(eversmk, lc5, chd5, .drop=FALSE) %>%
+  count() 
+```
+
+
+### Stratifying your graph by more than one variable
+
+The `facet_wrap()` function allows you to stratify a graph by a single variable and the `facet_grid()` function will allow you to stratify by two variables.  
+
+```{r faceting1}
+ggplot(data = nmes_data) + 
+  geom_bar(mapping = aes(x = eversmk, fill = disease), position = "fill") +
+  facet_wrap(~beltuse)
+
+ggplot(data = nmes_data) + 
+  geom_bar(mapping = aes(x = eversmk, fill = disease), position = "fill") +
+  facet_grid(marital~beltuse)
+```
+
+These functions will also work when using the table method to make a bar graph, but it's important to `group_by()` the stratifying variables in your table so that the proportions are taken conditionally on the right group!
+
+Notice here that the proportions add up to 1 within the smoking category:
+
+```{r faceting2}
+my_table <- nmes_data %>%
+  count(eversmk, disease) %>%
+  group_by(eversmk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge")
+```
+
+Let's add another variable:
+
+```{r faceting3}
+my_table <- nmes_data %>%
+  count(beltuse, eversmk, disease) %>%
+  group_by(eversmk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge") +
+  facet_wrap(~ beltuse)
+```
+
+Notice how the proportions don't add up properly?  If we are going to graph by the `beltuse` variable, we also need to group by the beltuse variable:
+
+```{r faceting4}
+my_table <- nmes_data %>%
+  count(beltuse, eversmk, disease) %>%
+  group_by(beltuse, eversmk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge") +
+  facet_wrap(~ beltuse)
+```
+
+You can extend this idea to two additional variables as well:
+
+```{r faceting5}
+my_table <- nmes_data %>%
+  count(marital, beltuse, eversmk, disease) %>%
+  group_by(marital, beltuse, eversmk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge") +
+  facet_wrap(marital ~ beltuse)
+```
+
+If you want to facet by more than two variables, you have to be more creative.  (You might first think about whether a display with more than two variables is useful to see!)  You could first subset your data by one of the variables and create separate faceted graphs for each subset of data.  For example, first split into male/female groups and then make a faceted plot within each of those groups.
+
+Alternatively, you could create a new variable that combines multiple variables together for plotting purposes. In the code below there's a new variable called `female_poor_smk` that combines the information from the three variables into one.
+```{r combinedvar}
+nmes_data <- nmes_data %>%
+  mutate(poor = factor(poor, levels = c("0", "1"), labels = c("N Poor", "Poor")))
+
+nmes_data <- nmes_data %>%
+  mutate(female = factor(female,levels = c("0", "1"), labels = c("M", "F")))
+
+my_table <- nmes_data %>%
+   mutate(female_poor = paste(female, poor, sep = " ")) %>%
+  mutate(female_poor_smk = paste(female_poor, eversmk, sep = " " )) %>%
+  count(lc5, female_poor_smk, educate) %>%
+  group_by(female_poor_smk) %>%
+  mutate(prop = n/sum(n))
+
+my_table
+```
+
+### Splitting a continuous variable into groups
+
+For plotting purposes, you might want to break a countinuous variable, like age or BMI, into groups.  Some of your peers did this for the assignment this week -- see the code for Display 1 for an example of doing this using the `cut()` function.  Here's another example of how this might look:
+```{r usingcut}
+nmes_data <- nmes_data %>% 
+  mutate(age_cat = cut(age,
+                      breaks = c(0,30,60,100),
+                      labels = c("Age < 30", "Age 30-60", "Age > 60")))
+
+nmes_data %>% count(age_cat)
+```
+
+You can also create a new variable using the `case_when()` function:
+```{r usingcasewhen}
+nmes_data <- nmes_data %>% 
+  mutate(age_cat = case_when(
+    age > 0 & age < 30 ~ "Age < 30",
+    age >= 30 & age <=60 ~ "Age 30-60",
+    age > 60 ~ "Age > 60"
+  ))
+
+nmes_data %>% count(age_cat)
+```
+
+Notice these results are a little bit different, and that's because the `cut()` function will always cut the same way (either including the left-most value or the right-most value) for each group of values, but with `case_when()` I can decide that I want the 30 and 60 to be included in the middle group explicitly.
+
+### Adding labels to figures
+
+We can relabel the axes, title, and legend using `labs()`.
+
+```{r addlabels}
+my_table <- nmes_data %>%
+  count(eversmk, disease) %>%
+  group_by(eversmk) %>%
+  mutate(prop = n/sum(n))
+
+ggplot(data = my_table) + 
+  geom_bar(aes(x = eversmk, y = prop, fill = disease), stat = "identity", position = "dodge") +
+  labs(y= "Risk of MSCD",
+       x= "",
+       title= "Risk of MSCD, comparing smokers to non-smokers", 
+       fill = "Disease status")
+```
+
+## Starting Assignment 1.2
+
+Do the following to address Question 1.1: How does the risk of disease compare for smokers and otherwise similar non-smokers?
+
+* (Can work on this now!) Improve your data display from last week to answer this question.
+* (Will talk about this on Wednesday!) Fit a logistic regression model to answer this question.  Interpret the coefficients and either p-values or confidence intervals from this model to answer the question.  That is, what does this model say about Question 1.1?
+
+* Submit your data display in R Markdown through Github by Sunday (February 1, 2026) at midnight. You can find a link to create this assignment in Github on Canvas.
+* Post a screenshot of your improved data display (just the graph or table) **and** your logistic regression model output on Piazza in the "Assignment 1-2 Results" thread.  Add a sentence or two that interprets the logistic regression results to answer the question of interest.  You are welcome to post this anonymously to your classmates. You can also include comments about what you chose to do or questions you had as you were making the display and fitting your model.
+* You may work together on this assignment, but you must submit your own assignment; please credit in your assignment anyone with whom you collaborated.
+* Next Monday in class we will start with a discussion of your work.
