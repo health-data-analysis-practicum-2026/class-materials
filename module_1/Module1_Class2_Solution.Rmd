@@ -71,10 +71,10 @@ nmes_data <- read_csv("module_1/nmesUNPROC.csv")
 ### Recode eversmk into Never smoker and Ever smoker and recode chd5 into No chd and chd
 nmes_data <- nmes_data %>%
   mutate(eversmk = factor(eversmk, levels = c("0", "1"), labels = c("Never smoker", "Ever smoker")),
-chd5 = factor(chd5,levels = c("0", "1"), labels = c("No chd", "chd")),
-### Create new column to split individuals in age groups
-    age_group = ifelse(age < 60, "Under 60", "60+")
-         )
+         chd5 = factor(chd5,levels = c("0", "1"), labels = c("No chd", "chd")),
+         ### Create new column to split individuals in age groups
+         age_group = ifelse(age < 60, "Under 60", "60+")
+  )
 
 ggplot(data=nmes_data) + geom_bar(mapping = aes(x=chd5, fill=eversmk), position="fill") + facet_wrap(~age_group)
 
@@ -156,7 +156,7 @@ Here, I filtered to only show the lc5 rate (not the No MSCD rate), modified the 
 ```{r}
 
 my_table <- nmes_data %>%
-  count(age, female, lc5, eversmk, .drop = FALSE) %>%
+  count(age, female, eversmk, lc5, .drop = FALSE) %>%
   group_by(age, female, eversmk) %>%
   mutate(prop = n/sum(n))
 
@@ -168,7 +168,7 @@ my_table %>%
   facet_grid(female ~ age) +   
   labs(
     title = "Rate of Lung Cancer",
-    subtitle = "Smokers vs non-smokers, stratified by sex and socio-economic status",
+    subtitle = "Smokers vs non-smokers, stratified by sex and age",
     x = "Smoking status",
     y = "Rate of Lung Cancer") +
   guides(fill="none") +
@@ -452,10 +452,11 @@ my_table <- nmes_data %>%
   mutate(prop = n/sum(n)) %>%
   filter(lc5 == "LC") %>%
   arrange(female, eversmk)%>%
+  select(-lc5) %>%
   rename(
     "Smoking Status" = eversmk, 
-    "Lung Cancer (LC) Status" = lc5,
-    "Gender" = female
+    "Gender" = female,
+    "Rate of lung cancer" = prop
   )
 my_table %>%
   kable(digits = 3) %>%
