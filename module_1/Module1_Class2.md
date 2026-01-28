@@ -48,7 +48,7 @@ We will answer these questions using data from the National Medical Expenditures
 
 ## Discussion of NMES data displays for Question 1-1
 
-As a group, we will discuss the following 7 displays.  For each display, we will answer the following questions:
+As a group, we will discuss the following 6 displays.  For each display, we will answer the following questions:
 
 * Does this display effectively answer our question on interest: *How does the risk of disease compare for smokers and otherwise similar non-smokers?*
      * Does it clearly show the risk of disease?
@@ -72,25 +72,6 @@ Here is a code chunk to make any modifications you would like to see:
 
 
 ### Display 2
-
-
-```
-## # A tibble: 25 × 6
-## # Groups:   age, female, eversmk [16]
-##    age   female lc5   eversmk          n    prop
-##    <fct> <fct>  <fct> <fct>        <int>   <dbl>
-##  1 1-20  Male   No LC Never smoker    44 1      
-##  2 1-20  Male   No LC Ever smoker     10 1      
-##  3 1-20  Female No LC Never smoker    54 1      
-##  4 1-20  Female No LC Ever smoker     22 1      
-##  5 21-40 Male   No LC Never smoker   316 1      
-##  6 21-40 Male   No LC Ever smoker    311 0.994  
-##  7 21-40 Male   LC    Ever smoker      2 0.00639
-##  8 21-40 Female No LC Never smoker   579 1      
-##  9 21-40 Female No LC Ever smoker    493 1      
-## 10 41-60 Male   No LC Never smoker   138 0.993  
-## # ℹ 15 more rows
-```
 
 ![](Module1_Class2_files/figure-html/example2-1.png)<!-- -->
 
