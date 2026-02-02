@@ -50,7 +50,7 @@ We will answer these questions using data from the National Medical Expenditures
 
 ## Discussion of NMES logistic regression results for Question 1-1
 
-In your breakout groups, take 20-25 minutes to discuss the following sets of logistic regression results and interpretations.  Looking at all 7 sets of results/interpretations, answer the following questions:
+In your breakout groups, take 15-20 minutes to discuss the following sets of logistic regression results and interpretations.  Looking at all 6 sets of results/interpretations, answer the following questions:
 
 (1) In order to address the comparison of interest between smokers and non-smokers, which variable **must** be included in the model?
 
@@ -64,7 +64,7 @@ In your breakout groups, take 20-25 minutes to discuss the following sets of log
 
 (6) If you were to create a nice succinct table of results to communicate the relevant information from the R output to the reader, what pieces of information would you include? What could be excluded?  What aesthetic choices would you make when presenting the information in the table and in the text?
 
-(7) For a variable like age, should we include it in our regression model in its continuous form or in a categorical form?  Why?
+(7) For a variable like age or BMI, should we include it in our regression model in its continuous form or in a categorical form?  Why? How are the coefficients interpreted in these different cases?
 
 (8) Should the variables used to determine "otherwise similar" in the regression model match the variables used to determine "otherwise similar" in the data display (graph)?  Why or why not?
 
@@ -843,6 +843,14 @@ nmes_data_sub %>% count(is.na(bmi))
 ```
 
 I wouldn't suggest doing this unless you are planning to use BMI in your analysis, because if you do you will be excluding some data that could be used to answer your question of interest!
+
+### Some notes on reporting statistical results
+
+See example papers from JAMA included with the class materials for today. When reporting statistical results include:
+
+* Statement of effect size, being clear what the direction of effect is
+* Measure of statistical significance, preferably a 95% CI or p-value
+* Do not make a statement about the null hypothesis, or say something like "because the p-value is less than 0.05....". Just provide the interpretation and evidence without any statistical jargon.
 
 
 ## Starting Assignment 1.3
