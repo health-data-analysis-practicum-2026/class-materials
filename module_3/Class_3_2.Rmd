@@ -1,0 +1,333 @@
+---
+title: "Class 3-2: Some additional information on reading in and wrangling data"
+author: "Health Data Analysis Practicum (AS.280.347)"
+date: "3/30/2026"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: false
+---
+
+```{r setup, include=FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(haven)
+library(knitr) 
+library(ggpubr)
+library(ggrepel)
+library(tidyverse)
+library(kableExtra)
+library(survey)
+library(broom)
+library(plotrix)
+library(patchwork)
+library(pander)
+# any other libraries you want to load
+```
+
+## Today's agenda
+
+* Reminder of plans for remainder of course
+* Talk about current status of your projects as a group
+* Group discussion of your work
+* Presentation of materials on reading in data
+* Questions and work time
+
+## Plan for the remainder of the course
+
+The goal of the rest of the course is to provide you with the support you need to create an excellent final report on a topic of your choice, including all steps of the process, from formulating a question through to getting the answer to it. We will provide you with time in class to work, so you need to plan for that and come prepared with next steps and questions.
+
+We will be interacting with each other on these project topics: supporting each other through feedback and knowledge sharing.
+
+There will be didactic components so support your learning:
+
+* More advanced modeling topics such as Poisson regression, survival analysis and Cox proportional-hazards models, etc.
+* More advanced data presentation topics such as data dashboards (interactive and static), enhanced R-markdown reports
+* Whatever other holes you feel you have in your statistical/data science knowledge that you think will come in handy (totally open to suggestions!)
+
+
+## Your project design
+
+Your final project will have the following pieces:
+
+* Question of interest
+* Data set and design
+  * Outcome variable
+  * Predictor variable(s) of primary interest
+  * Potential confounders
+  * Potential effect modifiers
+* Directed acyclic graph (DAG) showing the hypothesized relationships of interest and including potential confounders and effect modifiers
+* A primary analysis to address the question of interest
+* Communication of results in tables and figures
+
+### If you need additional inspiration: Open Case Studies
+
+Throughout our courses, we use case-study style analyses to present data science and statistics concepts in the context of public health questions and data collected from real life. For the past couple of years, we have been involved in developing teaching materials in this style as part of the [Open Case Studies](https://www.opencasestudies.org){target="_blank"} project. These case studies are full of useful examples of obtaining data from varied sources, from websites, to pdfs to twitter feeds. They also present steps to create useful and intricate data visualizations as well as in-depth presentations of statistical methods. As you seek inspiration for your own projects later in the course, or aim to expand your own data science skills, you might find them to be a useful resource. We especially recommend the interface [here](https://americanhealth.jhu.edu/open-case-studies){target="_blank"} which provides additional tools for navigating among ten of the case studies. 
+
+
+## When presenting your work
+
+* Discuss your analysis idea (what's your question?)
+* Discuss problems you ran into (and solutions if you have them!)
+* Describe
+    * Your data
+    * Your data cleaning process
+    * Results of your exploratory data analysis
+* To provide feedback
+    * Ask questions
+    * Make suggestions for improvement!
+    
+### Working project document
+
+We have created a working [working Google doc](https://docs.google.com/document/d/1zqzFqYCCs1mBlsVayRtn6XqYMYZMeiJgH_Otedkbc6E/edit?usp=sharing){target="_blank"} where you can record your plans. This will help you organize your thoughts, find classmates working on similar questions, and help us keep track of who is working on what. Please keep this document updated as your project changes!
+
+
+## Reshaping data
+
+This is a working example of wrangling some state-level data into a tidy format, including reading in from a pdf file, removing and reshaping variables, merging across multiple data sets and creating some summaries.
+
+This is some complex wrangling of data from a pdf file we won't go through it in detail, but take a look if you are interested!
+
+```{r mmrdata, include=FALSE}
+library(pdftools)
+
+pdf <- pdf_text("module_3/data/mmr-2018-2022-state-data.pdf")
+
+mmrdata <- pdf %>%
+    str_split("\n") %>%
+    unlist() %>%
+    dplyr::as_tibble() %>%
+    slice(-c(1:6, 48, 59:80))
+
+mmrdata %>%
+  mutate(value_len = str_length(value)) %>%tail()
+
+mmrdata %>% pull(value) %>% map(str_split, pattern = " ") %>% first()
+
+mmrdata %>% 
+  pull(value) %>%
+  map(str_count, pattern = "\\s{40,}") %>% 
+  unlist()
+
+mmrdata <-mmrdata %>%
+  mutate(value = str_replace_all(pull(., value), "\\s{40,}", "|N/A|")) %>%
+  mutate(value =str_trim(pull(., value), side = "left")) %>%
+  mutate(value = str_replace_all(pull(., value), "\\s{2,15}", "|"))
+
+mmrdata <-pull(mmrdata, value) %>%
+  str_split( "\\|{1,}") 
+
+mmrtibble <- as_tibble(do.call(rbind, mmrdata))
+
+mmrtibble[mmrtibble == "*"] <- NA
+
+colnames(mmrtibble) <- c("State",
+                    "Number of Births",
+                    "Number of Deaths",
+                    "MMR",
+                    "95% Lower Confidence Limit",
+                    "95% Upper Confidence Limit")
+
+mmrtibble$"Number of Births" <- as.numeric(gsub(",","",mmrtibble$"Number of Births"))
+mmrtibble$"Number of Deaths" <- as.numeric(gsub(",","",mmrtibble$"Number of Deaths"))
+mmrtibble$"MMR" = as.numeric(mmrtibble$"MMR")
+mmrtibble$"95% Lower Confidence Limit" = as.numeric(mmrtibble$"95% Lower Confidence Limit")
+mmrtibble$"95% Upper Confidence Limit" = as.numeric(mmrtibble$"95% Upper Confidence Limit")
+
+```
+
+
+
+```{r insurancedata, include=FALSE}
+insurancedata <- read_csv('module_3/data/insurancedata.csv')
+
+insurancetibble <- select(insurancedata, "State", "RestrictIns")
+
+# remove rows we don't want
+insurancetibble <- insurancetibble %>% 
+  slice(-c(3:4, 11, 14, 19, 26, 33, 43, 48, 51, 55, 58:59)) 
+
+insurancetibble <- insurancetibble %>%
+    mutate(RestrictIns = factor(RestrictIns, levels = c("0", "1"), labels = c("No", "Yes")))
+
+colnames(insurancetibble) <- c("State",
+                    "Insurance Restrictions on Abortion")
+
+```
+
+```{r povertydata, include=FALSE}
+povertydata <- read_csv('module_3/data/povertydata.csv')
+
+povertytibble <- select(povertydata, "Location", "Female")
+
+povertytibble <- povertytibble %>%
+  slice(-c(1,10,53))
+
+colnames(povertytibble) <- c("State",
+                    "Poverty Rate for Females")
+```
+
+```{r agesexracedata, include=FALSE}
+agesexracedata <- read_csv('module_3/data/agesexracedata.csv')
+
+agesexracetibble <- select(agesexracedata, "NAME", "SEX", "ORIGIN", "RACE", "AGE", "POPESTIMATE2022")
+
+agesexracetibble <- agesexracetibble %>%
+    mutate(SEX = factor(SEX, levels = c("0", "1", "2"), labels = c("Total", "Male", "Female")),
+          ORIGIN = factor(ORIGIN, levels = c("0", "1", "2"), labels = c("Total", "Not Hispanic", "Hispanic")),
+          RACE = factor(RACE, levels = c("1", "2", "3", "4", "5", "6"), labels = c("White", "Black/African American", "American Indian or Alaska Native", "Asian", "Native Hawaiian and Other Pacific Islander", "Two or more races")))
+
+# colnames(agesexracetibble) <- c("State",
+#                     "Sex",
+#                     "Hispanic Origin",
+#                     "Race",
+#                     "Age",
+#                     "Population Estimate (2022)")
+
+```
+
+```{r joining data, include=FALSE}
+povertyinsurance <- 
+  full_join(x = insurancetibble, y = povertytibble, by = "State")
+
+mmrpovins <-
+  full_join(x = povertyinsurance, y = mmrtibble, by = "State")
+
+my_table <- agesexracetibble %>%
+ filter(SEX == "Female")
+  
+# group_by(NAME, ORIGIN, RACE)
+
+my_table <- my_table %>% 
+  mutate(ageCat = cut(
+    AGE, 
+    breaks = c(0, 17, 24, 30, 36, 42, 48, 54, 60, Inf),
+    labels = c("0-17", "18-24", "25-30", "31-36", "37-42", "43-48", "49-54", "55-60", "61+")
+  ))
+
+```
+
+
+
+```{r summarizing data, include = FALSE}
+## here are some example summaries that might be useful!
+
+my_table %>% 
+  group_by(NAME, SEX, ORIGIN, RACE, ageCat) %>% 
+  summarize(totalpop = sum(POPESTIMATE2022))
+
+my_table %>% 
+  group_by(NAME, SEX, ORIGIN, RACE, ageCat) %>% 
+  summarize(totalpop = sum(POPESTIMATE2022))
+
+my_table %>% 
+  group_by(NAME, RACE) %>% 
+  summarize(total_by_race = sum(POPESTIMATE2022)) %>%
+  mutate(pct_by_race = total_by_race/sum(total_by_race))
+  
+my_table %>% 
+  group_by(NAME, RACE) %>% 
+  summarize(total_by_race = sum(POPESTIMATE2022)) %>%
+  mutate(pct_by_race = total_by_race/sum(total_by_race)) %>%
+  select(NAME, RACE, pct_by_race) %>%
+  pivot_wider(names_from = RACE, values_from = pct_by_race)
+
+
+
+# my_table <- nmes_data %>%
+#   count(poor, female, mscd, eversmk) %>%
+#   group_by(poor, female, eversmk) %>%
+#   mutate(prop = n/sum(n))
+
+```
+
+
+
+## Assignment 3.2
+
+* Use "Copy to" to create a new version of your final project Rmd file, with a new date (and correct year!)
+* Write a short introduction to your question of interest:
+    * Question
+    * Data source
+    * Outcome variable
+    * Primary predictor variable(s)
+* **Add your data to your Github project** and read your data into RStudio Cloud
+    * Many of you have not done this yet, which means I can't knit your files or provide detailed feedback
+* Examine and explore your data:
+    * How do you decide what variables to include in your data set?
+    * Summaries of your variables of interest
+        * Is there missing data?  Anything unusual or concerning?
+    * Recode from numbers to factors
+        * 1 -> "poor"", 0 -> "not poor", etc
+    * Make a few basic exploratory plots to answer your question
+* What type of regression analysis could you use to address your question?
+
+As we have with all assignments in the past:
+
+* Submit your assignment in R markdown through Github **by Sunday (April 5, 2026) at midnight**.  You can find a link to create your final project repository in Github on Canvas.
+* Share some information about your work so far on Piazza in the "Final Project Week 2" thread. This could be a **screenshot of a figure or table**, **some interpretation**, **a question** about how to do something, or **a problem** you would like help with. You are welcome to post this anonymously to your classmates, but remember that your project topic may be unique and so it may be hard to remain anonymous in these posts. 
+* In your Piazza post, **give a little background on your project** (question of interest, variables, etc) so that classmates have a context with which to look at your post.
+
+
+## Important dates for final project
+
+Below you can find important dates for this final project.  **Each of you will work at your own pace through this project**, so the items listed for each week are suggested benchmarks to keep you on track for these last 5 weeks of class.  
+
+**Each week you will submit your current work in R markdown through Github by Sunday at midnight.**  This includes your .Rmd file and either your dataset or your knit .html file if you are not sharing your data on the cloud.  **Each week you will also make a post on Piazza sharing something about your work in progress.**
+
+When you submit your work each week, include specific questions you have or places where you are stuck.  Be prepared to present (talk about) your work in class on the following Monday.
+
+**If you are struggling with any part of the project or want to talk through your code please come to office hours or reach out to us over email.**
+
+* **Week of March 23:**
+    * Identification of a question of interest and appropriate data set for answering the question.  
+    * Set up Github repository with data; read data into RStudio in Posit cloud
+    * Initial summaries, recoding, and possibly exploratory plots of the variables in your dataset
+    * Submit your work (and questions for us) through Github and post on Piazza Week 1 thread by Sunday (3/29) at midnight; be prepared to discuss your work in class on Monday (3/30)
+* **Week of March 30:**
+    * Finish recoding and cleaning of your data
+    * Finish exploratory analysis of your variables
+    * Create a rough initial data display (figure/table) that addresses your question of interest
+    * Submit your work (and questions for us) through Github and post on Piazza Week 2 thread by Sunday (4/5) at midnight; be prepared to discuss your work in class on Monday (4/6)
+* **Week of April 6:**
+    * Finalize your data display to answer your question of interest
+    * Create some initial regression models that answer your question of interest
+    * Submit your work (and questions for us) through Github and post on Piazza Week 3 thread by Sunday (4/12) at midnight; be prepared to discuss your work in class on Monday (4/13)
+* **Week of April 13:**
+    * Finalize your regression models for answering your question of interest
+    * Begin writing up your interpretation of your results for your final project report
+    * Submit your work (and questions for us) through Github by Sunday (4/19) at midnight
+* **Week of April 20:**
+    * Create a presentation (~ 4 slides, see below) to present your work to the class
+    * Continue writing up your interpretation of your results for your final project report. 
+    * Possible extension: Create a data dashboard, interactive Shiny or Rmd interface (for example with tabs)
+    * Submit your work (and questions for us) through Github by Sunday (4/26) at midnight
+    * Submit your presentation slides through Github by Sunday (4/26) at midnight and be prepared to give your presentation in class on Monday (4/27)
+    * NOTE: Around 4-6 of you will need to present on Wednesday April 22 since there isn't time for 18 presentations in one class
+* **April 27 (Monday): Class presentations**
+    * Each person will present their results to the class.  You should present your results as far as they are at that time.
+    * You will have 5 minutes to talk about your project.  
+    * You should prepare ~ 4 slides to aid in your presentation:
+        * Slide 1 will have your question, information about your data set, and your design (outcome, predictors, confounders, etc)
+        * Slide 2 should have a DAG showing your proposed relationship with confounders/modifiers included
+        * Slide 3 should show a data display that addresses your question of interest
+        * Slide 4 should show the results of a statistical analysis to answer your question
+        * You should submit these slides Sunday night through your project Github repository before coming to class; label the PPT file with your last name
+* **May 11 (Monday): Final report due**
+    * Your written report for your project is due at midnight through Github.
+    * Include an introduction section to give some context for why your question is interesting.
+    * Include a brief description of the data and variables you used for your project.
+    * Include a directed acyclic graph (DAG) that shows how you think your variables relate to each other.  Note: You do not need to try to make this DAG in R.  Make it in Powerpoint and then take a screen shot.  You can then upload the image file to RStudio cloud and insert it into your R Markdown document like [this](https://www.earthdatascience.org/courses/earth-analytics/document-your-science/add-images-to-rmarkdown-report/). 
+    * For each question of interest, you should have a data display and a statistical analysis to address the question.  
+    * For each question of interest, give a few brief sentences to describe the methods (regression techniques) you used to answer the question.
+    * Write up your results in a few paragraphs to answer your questions.  In your write-up, you should refer to your data display(s) and your analysis results.  Be numerate!
+    * You will submit a .Rmd file that will knit into the final report that you are submitting, i.e., all code is provided and runnable to produce the report.
+
+
