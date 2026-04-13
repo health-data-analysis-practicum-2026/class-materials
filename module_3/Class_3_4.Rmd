@@ -1,0 +1,799 @@
+---
+title: "Class 3-4: Layered graphics and model selection"
+author: "Health Data Analysis Practicum (AS.280.347)"
+date: "4/13/2026"
+output: 
+  html_document:
+    toc: true
+    toc_float: 
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: false
+---
+
+```{r setup, include=FALSE, message = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(haven)
+library(knitr) 
+library(ggpubr)
+library(ggrepel)
+library(tidyverse)
+library(kableExtra)
+library(survey)
+library(broom)
+library(plotrix)
+library(patchwork)
+library(pander)
+library(readxl)
+library(sf)
+library(usmap)
+
+```
+
+## Today's agenda
+
+* Reminder of plans for presentations
+* Talk about current status of your projects as a group
+* Group discussion of your work
+* Presentation of materials on layered graphics, model selection, and interpreting Poisson regression
+* Questions and work time
+
+
+
+### Working project document
+
+We have created a working [working Google doc](https://docs.google.com/document/d/1zqzFqYCCs1mBlsVayRtn6XqYMYZMeiJgH_Otedkbc6E/edit?usp=sharing){target="_blank"} where you can record your plans. This will help you organize your thoughts, find classmates working on similar questions, and help us keep track of who is working on what. Please keep this document updated as your project changes!
+
+
+### Layered graphics with ggplot
+
+Adapted from [r4ds second edition](https://r4ds.hadley.nz/data-visualize){target="_blank"}
+```{r}
+library(palmerpenguins)
+
+glimpse(penguins)
+
+ggplot(penguins, aes(x = species, y = body_mass_g)) +
+  geom_boxplot()
+
+
+ggplot(penguins, aes(x = species, y = body_mass_g)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+ggplot(penguins, aes(x = species, y = body_mass_g)) +
+  geom_boxplot() +
+  geom_jitter() +   
+  stat_summary(fun = "mean", geom = "crossbar", color = "red", width = 0.2, linewidth = 0.3)
+
+```
+
+For additional examples using `stat_summary`, you can see [the ggplot2 help file](https://ggplot2.tidyverse.org/reference/index.html#stats){target="_blank"} or [stat_summary documentation](https://ggplot2.tidyverse.org/reference/stat_summary.html){target="_blank"}
+
+
+### Graphics discussion
+
+```{r libraries2, include=FALSE}
+```
+
+```{r Read & clean pm_data, echo=FALSE}
+states <- us_map(regions = "states")
+
+pm_data <- read.csv('./module_3/data/HDPulse_data_export.csv', sep=";")
+
+# clean pm_data 
+pm_data[c('State', 'FIPS','PM 2.5')] <- str_split_fixed(pm_data$Air.Pollution...Particulate.Matter.by.State, ',', 3) # pm data in micrograms per cubic meter
+pm_data <- pm_data %>% 
+  slice(-c(1:4)) %>%
+  slice(-c(52:58))
+
+# join state geom data with PM 2.5 data
+states <- states %>%
+  right_join(pm_data, by = c("full"="State"))
+
+# turn particulate matter data into integers 
+states$`PM 2.5` <- as.double(states$`PM 2.5`)
+
+```
+
+
+```{r Read BRFSS data, echo=FALSE}
+brfss <- read.csv('./module_3/data/main_data.csv')
+```
+
+
+```{r Clean BRFSS data, echo=FALSE}
+brfss <- brfss %>%
+  mutate(
+    state = factor(state, 
+      levels = c(1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 22, 
+                 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 
+                 40, 41, 44, 45, 46, 47, 48, 49, 50, 51, 53, 54, 55, 56, 66, 72, 78), 
+      labels = c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", 
+                 "Connecticut", "Delaware", "District of Columbia", "Florida", "Georgia", 
+                 "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa", "Kansas", "Louisiana", 
+                 "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota", "Mississippi", 
+                 "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey", 
+                 "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", 
+                 "Oklahoma", "Oregon", "Rhode Island", "South Carolina", "South Dakota", 
+                 "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington", 
+                 "West Virginia", "Wisconsin", "Wyoming", "Guam", "Puerto Rico", "Virgin Islands")),
+    gender = factor(gender, levels=c(1,2), labels=c("Male","Female")),
+    age = factor(age, 
+      levels = c(1, 2, 3, 4, 5, 6), 
+      labels = c("Age 18 to 24", "Age 25 to 34", "Age 35 to 44", 
+                 "Age 45 to 54", "Age 55 to 64", "Age 65 or older")),
+    race = factor(race, 
+      levels = c(1, 2, 3, 4, 5, 9), 
+      labels = c("White only, Non-Hispanic", 
+                 "Black only, Non-Hispanic", 
+                 "Other race only, Non-Hispanic", 
+                 "Multiracial, Non-Hispanic", 
+                 "Hispanic", 
+                 "Don't know/Not sure/Refused")),
+    marital = factor(marital, 
+      levels = c(1, 2, 3, 4, 5, 6, 9), 
+      labels = c("Married", 
+                 "Divorced", 
+                 "Widowed", 
+                 "Separated", 
+                 "Never married", 
+                 "A member of an unmarried couple", 
+                 "Refused")),
+    education = factor(education, 
+      levels = c(1, 2, 3, 4), 
+      labels = c("Didn't graduate High School", 
+                 "Graduated High School", 
+                 "Attended College", 
+                 "Graduated College")),
+    income = factor(income, 
+      levels = c(1, 2, 3, 4, 5, 6, 7), 
+      labels = c("Less than $15,000", 
+                 "$15,000 to $25,000", 
+                 "$25,000 to $35,000", 
+                 "$35,000 to $50,000", 
+                 "$50,000 to $100,000", 
+                 "$100,000 to $200,000", 
+                 "$200,000 or more")),
+    asthma = factor(asthma, 
+      levels = c(1, 2, 3), 
+      labels = c("Ever", "Ever", "Never")), #Collapsing Current (1) and Former (2)
+    cholesterol = factor(cholesterol, 
+      levels = c(1, 2), 
+      labels = c("No", "Yes")),
+    health_status = factor(health_status, 
+      levels = c(1, 2), 
+      labels = c("Good or Better Health", 
+                 "Fair or Poor Health")),
+    smoker = factor(smoker,
+      levels=c(1,2,3,4),
+      labels=c("Everyday","Some Days","Former","Never"))
+  )
+
+brfss <- brfss %>%
+  mutate(
+    chd = factor(chd,
+      levels=c(1,2),
+      labels=c("Yes","No")),
+    copd = factor(copd,
+      levels=c(1,2,7),
+      labels=c("Yes","No","Don't Know/Not Sure"))) %>%
+  na.omit(brfss$asthma)
+
+```
+
+
+```{r Create pm_cat column, echo=FALSE}
+# join brfss data with PM 2.5 data
+join_pm_brfss <- brfss %>%
+  left_join(pm_data, by = c("state"="State"))
+
+# do a case when for pm 2.5
+join_pm_brfss <- join_pm_brfss %>%
+  mutate(
+    pm_cat = case_when(
+      `PM 2.5` >= 3 & `PM 2.5` <= 6 ~ "Low",
+      `PM 2.5` > 6 ~ "High"
+    ) 
+  ) %>%
+  filter(!is.na(`PM 2.5`))
+
+```
+
+
+```{r Exploratory Research: Chloropleth map of US State by PM 2.5, echo=FALSE }
+ggplot(states) +
+  geom_sf(aes(fill=`PM 2.5`), lwd = 0.1, color="white") + 
+  scale_fill_viridis_c(direction = -1) +
+  theme_bw() +
+  labs(
+    title="Particulate Matter 2.5 by U.S State"
+  )
+```
+
+```{r Exploratory Research: PM 2.5 percentage with each state, echo=FALSE}
+ggplot(data = join_pm_brfss, aes(x=state, y=`PM 2.5`, color = pm_cat)) +
+  geom_point(stat="identity") +
+  labs(
+    title = 'Average PM 2.5 by State',
+    x = NULL,
+    y = "PM 2.5 µg/m³",
+    color = "PM Status"
+  ) + 
+  scale_color_manual(values = c("Low"= "#ff3d5a","High"= "purple")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+
+```{r Exploratory Research: Asthma percentage with each state, echo=FALSE}
+
+low_pm_states <- join_pm_brfss %>%
+  filter(pm_cat == "Low")
+high_pm_states <- join_pm_brfss %>%
+  filter(pm_cat == "High")
+
+ggplot(data = high_pm_states) +
+  geom_bar(mapping = aes(x=state, fill=asthma), position = "fill") +
+    labs(
+      title = "Presence of Asthma in States with High PM 2.5",
+      x = NULL,
+      y = "Proportion of respondents", 
+      fill = "Asthma Status"
+    ) + 
+    scale_fill_manual(values = c("#ff3d5a", "#A9A9A9")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+ggplot(data = low_pm_states) +
+  geom_bar(mapping = aes(x=state, fill=asthma), position = "fill") +
+    labs(
+      title = "Presence of Asthma in States with Low PM 2.5",
+      x = NULL,
+      y = "Proportion of respondents", 
+      fill = "Asthma Status"
+    ) + 
+    scale_fill_manual(values = c("#ff3d5a", "#A9A9A9")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+
+```
+
+```{r alternative plot}
+join_pm_brfss %>%
+  group_by(state) %>% 
+  mutate(asthma_pct = sum(asthma == "Ever")/n()) %>%
+  select(state, pm_cat, asthma_pct) %>%
+  distinct() %>%
+ggplot(aes(x = pm_cat, y = asthma_pct)) +
+  geom_boxplot() +
+  geom_point() +   
+  stat_summary(fun = "mean", geom = "crossbar", color = "red", width = 0.2, linewidth = 0.3)
+
+
+```
+
+
+### Interpreting Poisson regression (and general discussion of effect size)
+
+
+```{r mmrdata, include=FALSE}
+library(pdftools)
+
+pdf <- pdf_text("module_3/data/mmr-2018-2022-state-data.pdf")
+
+mmrdata <- pdf %>%
+    str_split("\n") %>%
+    unlist() %>%
+    dplyr::as_tibble() %>%
+    slice(-c(1:6, 48, 59:80))
+
+mmrdata %>%
+  mutate(value_len = str_length(value)) %>%tail()
+
+mmrdata %>% pull(value) %>% map(str_split, pattern = " ") %>% first()
+
+mmrdata %>% 
+  pull(value) %>%
+  map(str_count, pattern = "\\s{40,}") %>% 
+  unlist()
+
+mmrdata <-mmrdata %>%
+  mutate(value = str_replace_all(pull(., value), "\\s{40,}", "|N/A|")) %>%
+  mutate(value =str_trim(pull(., value), side = "left")) %>%
+  mutate(value = str_replace_all(pull(., value), "\\s{2,15}", "|"))
+
+mmrdata <-pull(mmrdata, value) %>%
+  str_split( "\\|{1,}") 
+
+mmrtibble <- as_tibble(do.call(rbind, mmrdata))
+
+mmrtibble[mmrtibble == "*"] <- NA
+
+colnames(mmrtibble) <- c("State",
+                    "Number of Births",
+                    "Number of Deaths",
+                    "MMR",
+                    "95% Lower Confidence Limit",
+                    "95% Upper Confidence Limit")
+
+mmrtibble$"Number of Births" <- as.numeric(gsub(",","",mmrtibble$"Number of Births"))
+mmrtibble$"Number of Deaths" <- as.numeric(gsub(",","",mmrtibble$"Number of Deaths"))
+mmrtibble$"MMR" = as.numeric(mmrtibble$"MMR")
+mmrtibble$"95% Lower Confidence Limit" = as.numeric(mmrtibble$"95% Lower Confidence Limit")
+mmrtibble$"95% Upper Confidence Limit" = as.numeric(mmrtibble$"95% Upper Confidence Limit")
+
+```
+
+
+```{r insurancedata, include=FALSE}
+insurancedata <- read_csv('module_3/data/insurancedata.csv')
+
+insurancetibble <- select(insurancedata, "State", "RestrictIns")
+
+insurancetibble <- insurancetibble %>% 
+  slice(-(3:4)) %>%
+  slice(-11) %>%
+  slice(-15) %>%
+  slice(-21) %>%
+  slice(-27) %>%
+  slice(-36) %>%
+  slice(-40) %>%
+  slice(-42) %>%
+  slice(-45) %>%
+  slice(-(47:48))
+
+insurancetibble <- insurancetibble %>%
+    mutate(RestrictIns = factor(RestrictIns, levels = c("0", "1"), labels = c("No", "Yes")))
+
+# colnames(insurancetibble) <- c("State",
+#                     "Insurance Restrictions on Abortion")
+
+```
+
+```{r povertydata, include=FALSE}
+povertydata <- read_csv('module_3/data/povertydata.csv')
+
+povertytibble <- select(povertydata, "Location", "Female")
+colnames(povertytibble) <- c("State",
+                    "Poverty Rate for Females")
+```
+
+```{r agesexracedata, include=FALSE}
+agesexracedata <- read_csv('module_3/data/agesexracedata.csv')
+
+agesexracetibble <- select(agesexracedata, "NAME", "SEX", "ORIGIN", "RACE", "AGE", "POPESTIMATE2022")
+
+agesexracetibble <- agesexracetibble %>%
+    mutate(SEX = factor(SEX, levels = c("0", "1", "2"), labels = c("Total", "Male", "Female")),
+          ORIGIN = factor(ORIGIN, levels = c("0", "1", "2"), labels = c("Total", "Not Hispanic", "Hispanic")),
+          RACE = factor(RACE, levels = c("1", "2", "4", "3", "5", "6"), labels = c("White", "Black/African American", "Asian", "Other race(s)", "Other race(s)", "Other race(s)")))
+
+agesexracetibble <- agesexracetibble %>% 
+  mutate(ageCat = cut(
+    AGE, 
+    breaks = c(0, 15, 34, 52, Inf),
+    labels = c("0-15", "16-34", "35-52", "53+"), 
+    include.lowest = TRUE)
+  )
+
+racetibble <- agesexracetibble %>%
+ filter(SEX == "Female") %>%
+  filter(ORIGIN == "Total") %>%
+  group_by(NAME, RACE) %>%
+  summarize(total_by_race = sum(POPESTIMATE2022)) %>%
+  mutate(pct_by_race = total_by_race/sum(total_by_race)) %>%
+  select(NAME, RACE, pct_by_race) %>%
+  pivot_wider(names_from = RACE, values_from = pct_by_race)
+
+hispanictibble <- agesexracetibble %>%
+ filter(SEX == "Female") %>%
+  filter(ORIGIN != "Total") %>%
+  group_by(NAME, ORIGIN) %>%
+  summarize(total_by_origin = sum(POPESTIMATE2022)) %>%
+  mutate(pct_by_origin = total_by_origin/sum(total_by_origin)) %>%
+  select(NAME, ORIGIN, pct_by_origin) %>%
+  pivot_wider(names_from = ORIGIN, values_from = pct_by_origin)
+
+agetibble <- agesexracetibble %>%
+  filter(SEX == "Female") %>%
+  group_by(NAME, ageCat) %>%
+  summarize(total_by_ageCat = sum(POPESTIMATE2022)) %>%
+  mutate(pct_by_ageCat = total_by_ageCat/sum(total_by_ageCat)) %>%
+  select(NAME, ageCat, pct_by_ageCat) %>%
+  pivot_wider(names_from = ageCat, values_from = pct_by_ageCat)
+
+```
+
+```{r joining data, include=FALSE}
+insmmr <- 
+  full_join(x = insurancetibble, y = mmrtibble, by = "State")
+
+insmmrpov <-
+  full_join(x = insmmr, y = povertytibble, by = "State")
+
+racehisp <-
+  full_join(x = racetibble, y = hispanictibble, by = "NAME")
+
+ageracehisp <-
+  full_join(x = agetibble, y = racehisp, by = "NAME")
+
+names(ageracehisp)[names(ageracehisp) == 'NAME'] <- 'State'
+
+alldata <- 
+  full_join(x = insmmrpov, y = ageracehisp, by = "State")
+
+alldata <- alldata %>% 
+  filter(!is.na(RestrictIns))
+
+```
+
+```{r exploratory data analysis, echo=FALSE, warning=FALSE, message = FALSE}
+p1 <- ggplot(alldata, aes(x=RestrictIns, y=MMR)) + 
+  geom_boxplot() + 
+  labs(
+    title = "Relationship between restrictions on abortion and MMR, by state",
+    x = "Restrictions on Insurance Coverage of Abortion",
+    y = "Maternal Mortality Rate")
+
+
+#race graphs
+p2 <- ggplot(alldata, aes(x=`Black/African American`, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs % Black, by state",
+    x = "Percent Black/African American",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+
+p3 <- ggplot(alldata, aes(x=White, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs % White, by state",
+    x = "Percent White",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+
+p4 <- ggplot(alldata, aes(x=Asian, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs % Asian, by state",
+    x = "Percent Asian",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+
+p5 <- ggplot(alldata, aes(x=Hispanic, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs % Hispanic, by state",
+    x = "Percent Hispanic",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+#age and poverty
+
+p6 <- ggplot(alldata, aes(x=`35-52`, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs % 35-52 years old, by state",
+    x = "Percent 35-52 years old for females",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+p7 <- ggplot(alldata, aes(x=`Poverty Rate for Females`, y=MMR)) +
+  geom_point() +
+  labs(
+    title = "MMR vs Poverty Rate, by state",
+    x = "Poverty Rate for females",
+    y = "Maternal Mortality Rate") +
+  geom_smooth(method = "lm")
+
+
+(p1) 
+(p2 | p3) / (p4 | p5)
+(p6 | p7)
+
+  
+  # facet_grid(poor~female) +
+  # theme_bw(base_size=8.5) +
+  # labs(
+  #   title = "Rate of Major Smoking-Caused Disease (MSCD)",
+  #   subtitle = "Smokers vs non-smokers, stratified by sex and socio-economic status",
+  #   x = "Smoking status",
+  #   y = "Rate of MSCD") +
+  # guides(fill="none")
+```
+
+
+
+```{r}
+
+pmodel <- glm(`Number of Deaths` ~ RestrictIns + `Poverty Rate for Females` + `35-52` + `Black/African American` + Hispanic, data=alldata, offset=log(`Number of Births`), family=poisson(link="log"))
+summary(pmodel)
+
+pmodel %>%
+  tidy(exponentiate = TRUE, conf.int = TRUE, conf.level = 0.95) %>%
+  filter( term != "(Intercept)") %>%
+  mutate(conf.int = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")")) %>%
+  select(Term = term, `Adjusted RR???` = estimate, `p-value` = p.value, `95% CI` = conf.int) %>%
+  kable(format = "pipe",
+        digits = 3,
+        align = c("l", "r", "r", "r"))
+
+# example: 
+# model_3 <- glm(conc ~ sex + sport, data=conc_data, offset=log(gameexp), family=poisson(link="log"))
+# summary(model_3)
+# exp(model_3$coefficients)
+# exp(confint.default(model_3))
+
+```
+
+
+```{r}
+
+alldata_mat <- alldata %>% 
+  mutate(`35-52 Pct` = 100*`35-52`)
+
+pmodel_mat <- glm(`Number of Deaths` ~ RestrictIns + `Poverty Rate for Females` + `35-52 Pct` + `Black/African American` + Hispanic, data=alldata_mat, offset=log(`Number of Births`), family=poisson(link="log"))
+summary(pmodel)
+
+pmodel_mat %>%
+  tidy(exponentiate = TRUE, conf.int = TRUE, conf.level = 0.95) %>%
+  filter( term != "(Intercept)") %>%
+  mutate(conf.int = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")")) %>%
+  select(Term = term, `Adjusted RR???` = estimate, `p-value` = p.value, `95% CI` = conf.int) %>%
+  kable(format = "pipe",
+        digits = 3,
+        align = c("l", "r", "r", "r"))
+
+# example: 
+# model_3 <- glm(conc ~ sex + sport, data=conc_data, offset=log(gameexp), family=poisson(link="log"))
+# summary(model_3)
+# exp(model_3$coefficients)
+# exp(confint.default(model_3))
+
+```
+
+
+### Model selection
+
+How do you know if it is a good model for answering our question of interest? There are many approaches to answering this question. We will use the NHANES data looking at hypertension risk as an example.
+
+
+One way you can decide what variables to include in a model is by looking at whether the model coefficients associated with those variables are statistically significantly different from zero.  This tells you whether the value of the outcome (in this case log odds of having hypertension) varies as this particular input variable changes, considering all other variables in your model. So you can look at the t-statistics and p-values associated with this variable to see whether you would reject the null hypothesis that the parameters associated with this variable are zero. 
+
+
+```{r nhanesload}
+dat <- read_sas('./module_2/d.sas7bdat')
+dim(dat)
+
+rename <- dat %>% 
+  select(id = KEY,
+         age = SPAGE,
+         race = DMQ_14_1,
+         gender = GENDER,
+         born = US_BORN,
+         diet = DBQ_1,
+         income = INC20K,
+         diabetes = DIQ_1,
+         bmi = BMI,
+         cholesterol = BPQ_16,
+         drinkfreq = ALQ_1,
+         drinkunit = ALQ_1_UNIT,
+         smoking = SMOKER3CAT,
+         hypertension = BPQ_2,
+         surveyweight = EXAM_WT)
+
+rename <- rename %>% 
+  mutate(drink_denom = case_when(drinkfreq == 0 | drinkunit == 1 ~ 1,
+                                   drinkunit == 2 ~ 52 / 12,
+                                   drinkunit == 3 ~ 52),
+         drink = drinkfreq / drink_denom)
+
+
+hy_df <- rename %>% 
+  mutate(race = factor(race, 
+                       levels = c(100, 110, 120, 140, 180, 250), 
+                       labels = c('White', 'Black/African American', 
+                                  'Indian /Alaska Native', 
+                                  'Pacific Islander', 
+                                  'Asian', 'Other Race')),
+         gender = factor(gender, 
+                         levels = c(1, 2), 
+                         labels = c('Male', 'Female')),
+         born = factor(born, 
+                       levels = c(1, 2),
+                       labels = c("US Born", "Non-US Born")),
+         diet = factor(diet, 
+                       levels = c(5:1), 
+                       labels = c('Poor', 'Fair', 'Good', 
+                                  'Very good','Excellent')),
+         income = factor(income, 
+                         levels = c(1:6), 
+                         labels = c('Less than $20,000','$20,000 - $39,999',
+                                    '$40,000 - $59,999','$60,000 - $79,999',
+                                    '$80,000 - $99,999','$100,000 or more')),
+         diabetes = factor(diabetes, 
+                           levels = c(2, 1, 3), 
+                           labels = c('No','Yes','Prediabetes')),
+         cholesterol = factor(cholesterol, 
+                              levels = c(2, 1), 
+                              labels = c('Low value','High value')),
+         drinkcat = factor(drink >= 1, 
+                        labels = c('<1 / wk', '1+ / week')),
+         smoking = factor(smoking, levels=c(1,3,2), 
+                         labels=c('Never smoker','Former smoker','Current smoker')),
+         hypertension = factor(hypertension, 
+                               levels = c(2, 1), 
+                               labels = c('No','Yes'))
+  ) 
+
+
+hy_p_df <- 
+  hy_df %>%
+  drop_na()
+
+hypertension_design <- svydesign(
+  id = ~1,
+  weights = ~hy_df$surveyweight,
+  data = hy_df
+)
+h_design_nona <- subset(hypertension_design, complete.cases(hy_df))
+
+```
+
+
+```{r fitmodels, warning=TRUE}
+g0 <- svyglm(hypertension ~ smoking, 
+    family = quasibinomial(link = 'logit'), design = h_design_nona)
+summary(g0)
+
+g1 <- svyglm(hypertension ~ 
+               age + race + gender + diet + income + 
+               diabetes + bmi + cholesterol + drink + smoking,
+             family = quasibinomial(link = 'logit'), 
+             design = h_design_nona)
+summary(g1)
+```
+
+
+Not all of the variables in our full model `g1` are considered statistically significant so we would perhaps like to remove some of them to get a reduced model. However, you may want to keep a variable in the model, even if the coefficients are not significantly different from zero, if that variable is important for the question you are trying to answer.
+
+#### Testing single variables: `regTermTest`
+
+However, it also may be useful to have a formal way to test whether including a variable improves how well your model fits the data or explains the variability in the data. For any categorical variables, it is potentially confusing to know how to interpret things when some levels have significantly non-zero coefficients, while others don't. Fortunately, there is a function called `regTermTest`, designed specifically for survey-weighted regression as part of the `survey` package, that can be used to perform such a test.
+
+This test is useful for what we call "nested" models: models where the variables included in one model are a subset of the variables included in the other. For example, looking at the complex model above, supposed we wanted to compare this model to the same model, but without the `diet` variable. This simpler model would be considered "nested" inside the more complex one. In the case of nested models, you can use a test called a "likelihood ratio test": at a high level, it compares the likelihood of the data for the simpler model, to the likelihood of the data using the more complex model, and assesses whether including additional variables is "worth it" in terms of improving model fit.
+
+For example, to test `diet`:
+
+```{r testdiet}
+regTermTest(g1, test.terms = ~ diet,
+             df = degf(g1$survey.design),
+             method = "Wald")
+
+g1_diet_test <- regTermTest(g1, test.terms = ~ diet,
+             df = degf(g1$survey.design),
+             method = "Wald")
+```
+
+Or to test `race`:
+
+```{r testrace}
+regTermTest(g1, test.terms = ~ race,
+             df = degf(g1$survey.design),
+             method = "Wald")
+
+g1_race_test <- regTermTest(g1, test.terms = ~ race,
+             df = degf(g1$survey.design),
+             method = "Wald")
+```
+
+
+#### Comparing non-nested models: `AIC`
+
+
+It's also often nice to get a value that summarizes how well your model fits the data. To do this here, we'll use an approach referred to as Akaike's "An Information Criterion," or `AIC()`. We won't discuss too many details here, but the lower an AIC for a model, the better that model fits the data. The AIC incorporates a trade-off between the number of parameters (variables) included in the model and how well the model explains the observed data:
+
+$$ AIC = 2k - 2 \ln{\hat{L}} $$
+
+where $k$ is the number of parameters, and $\hat{L}$ is the *likelihood* of the data, given the fitted model. Higher $k$ means higher (worse) AIC; higher $\hat{L}$ means lower (better) AIC. 
+
+Below, we can see that `g1`, where we include multiple predictors has the lowest AIC value. Looking at this value combined with your model summary output will help you determine which of your models is the best choice for your final analysis.
+
+```{r aicintro}
+AIC(g0, g1)
+```
+
+One important note about using AIC: while the models do not need to be nested, the exact same data must be used to fit the models that you are comparing. This means you need to be careful about handling missing values and working with survey-weighted data.
+
+## Assignment 3.4
+
+* Use "Copy to" to create a new version of your final project Rmd file, with a new date: for this week it should be **Final_Project_Draft_2026_04_19.Rmd**
+* Write a short introduction to your question of interest:
+    * Question
+    * Data source
+    * Outcome variable
+    * Primary predictor variable(s)
+* **Add your data to your Github project** and read your data into RStudio
+    * Many of you have not done this yet, which means I can't knit your files or provide detailed feedback
+* Examine and explore your data:
+    * How do you decide what variables to include in your data set?
+    * Summaries of your variables of interest
+        * Is there missing data?  Anything unusual or concerning?
+    * Recode from numbers to factors
+        * 1 -> "poor"", 0 -> "not poor", etc
+    * Make a few basic exploratory plots to answer your question
+* Conduct a regression analysis to address your question, making sure to include relevant covariates.
+* Interpret the results of your regression model. Do you want to try to perform some model selection?
+
+As we have with all assignments in the past:
+
+* Submit your assignment in R markdown through Github **by Sunday (April 19, 2026) at midnight**.  
+* Share some information about your work so far on Piazza in the "Final Project Week 4" thread. This could be a **screenshot of a figure or table**, **some interpretation**, **a question** about how to do something, or **a problem** you would like help with. You are welcome to post this anonymously to your classmates, but remember that your project topic may be unique and so it may be hard to remain anonymous in these posts. 
+* In your Piazza post, **give a little background on your project** (question of interest, variables, etc) so that classmates have a context with which to look at your post.
+
+
+
+## Important dates for final project
+
+Below you can find important dates for this final project.  **Each of you will work at your own pace through this project**, so the items listed for each week are suggested benchmarks to keep you on track for these last 5 weeks of class.  
+
+**Each week you will submit your current work in R markdown through Github by Sunday at midnight.**  This includes your .Rmd file and either your dataset or your knit .html file if you are not sharing your data on the cloud.  **Each week you will also make a post on Piazza sharing something about your work in progress.**
+
+When you submit your work each week, include specific questions you have or places where you are stuck.  Be prepared to present (talk about) your work in class on the following Monday.
+
+**If you are struggling with any part of the project or want to talk through your code please come to office hours or reach out to us over email.**
+
+* **Week of March 23:**
+    * Identification of a question of interest and appropriate data set for answering the question.  
+    * Set up Github repository with data; read data into RStudio in Posit cloud
+    * Initial summaries, recoding, and possibly exploratory plots of the variables in your dataset
+    * Submit your work (and questions for us) through Github and post on Piazza Week 1 thread by Sunday (3/29) at midnight; be prepared to discuss your work in class on Monday (3/30)
+* **Week of March 30:**
+    * Finish recoding and cleaning of your data
+    * Finish exploratory analysis of your variables
+    * Create a rough initial data display (figure/table) that addresses your question of interest
+    * Submit your work (and questions for us) through Github and post on Piazza Week 2 thread by Sunday (4/5) at midnight; be prepared to discuss your work in class on Monday (4/6)
+* **Week of April 6:**
+    * Finalize your data display to answer your question of interest
+    * Create some initial regression models that answer your question of interest
+    * Submit your work (and questions for us) through Github and post on Piazza Week 3 thread by Sunday (4/12) at midnight; be prepared to discuss your work in class on Monday (4/13)
+* **Week of April 13:**
+    * Finalize your regression models for answering your question of interest
+    * Begin writing up your interpretation of your results for your final project report
+    * Submit your work (and questions for us) through Github by Sunday (4/19) at midnight
+* **Week of April 20:**
+    * Create a presentation (~ 4 slides, see below) to present your work to the class
+    * Continue writing up your interpretation of your results for your final project report. 
+    * Possible extension: Create a data dashboard, interactive Shiny or Rmd interface (for example with tabs)
+    * Submit your work (and questions for us) through Github by Sunday (4/26) at midnight
+    * Submit your presentation slides through Github by Sunday (4/26) at midnight and be prepared to give your presentation in class on Monday (4/27)
+    * NOTE: Around 4-6 of you will need to present on Wednesday April 22 since there isn't time for 18 presentations in one class
+* **April 27 (Monday): Class presentations**
+    * Each person will present their results to the class.  You should present your results as far as they are at that time.
+    * You will have 5 minutes to talk about your project.  
+    * You should prepare ~ 4 slides to aid in your presentation:
+        * Slide 1 will have your question, information about your data set, and your design (outcome, predictors, confounders, etc)
+        * Slide 2 should have a DAG showing your proposed relationship with confounders/modifiers included
+        * Slide 3 should show a data display that addresses your question of interest
+        * Slide 4 should show the results of a statistical analysis to answer your question
+        * You should submit these slides Sunday night through your project Github repository before coming to class; label the PPT file with your last name
+* **May 11 (Monday): Final report due**
+    * Your written report for your project is due at midnight through Github.
+    * Include an introduction section to give some context for why your question is interesting.
+    * Include a brief description of the data and variables you used for your project.
+    * Include a directed acyclic graph (DAG) that shows how you think your variables relate to each other.  Note: You do not need to try to make this DAG in R.  Make it in Powerpoint and then take a screen shot.  You can then upload the image file to RStudio cloud and insert it into your R Markdown document like [this](https://www.earthdatascience.org/courses/earth-analytics/document-your-science/add-images-to-rmarkdown-report/). 
+    * For each question of interest, you should have a data display and a statistical analysis to address the question.  
+    * For each question of interest, give a few brief sentences to describe the methods (regression techniques) you used to answer the question.
+    * Write up your results in a few paragraphs to answer your questions.  In your write-up, you should refer to your data display(s) and your analysis results.  Be numerate!
+    * You will submit a .Rmd file that will knit into the final report that you are submitting, i.e., all code is provided and runnable to produce the report.
+
+

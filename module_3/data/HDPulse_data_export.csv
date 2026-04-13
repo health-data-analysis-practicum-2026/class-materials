@@ -1,0 +1,68 @@
+﻿Air Pollution - Particulate Matter by State
+"All Races (includes Hispanic/Latino), Both Sexes, All Ages, 2019"
+
+Sorted by Percent
+
+State,FIPS,Micrograms per cubic meter (PM2.5)(1)
+"United States",00000,7.4
+"Georgia",13000,9.4
+"Alabama",01000,9.3
+"Mississippi",28000,9.0
+"Arkansas",05000,8.9
+"District of Columbia",11001,8.9
+"Ohio",39000,8.9
+"Illinois",17000,8.8
+"Indiana",18000,8.8
+"Oklahoma",40000,8.7
+"Louisiana",22000,8.6
+"Texas",48000,8.6
+"Pennsylvania",42000,8.5
+"South Carolina",45000,8.3
+"Kentucky",21000,8.2
+"Florida",12000,7.8
+"New Jersey",34000,7.8
+"North Carolina",37000,7.8
+"Wisconsin",55000,7.8
+"Oregon",41000,7.7
+"Alaska",02900,7.6
+"Delaware",10000,7.6
+"Missouri",29000,7.6
+"Tennessee",47000,7.6
+"Connecticut",09000,7.4
+"Iowa",19000,7.4
+"Maryland",24000,7.4
+"Virginia",51000,7.3
+"West Virginia",54000,7.3
+"California",06000,7.1
+"Washington",53000,7.1
+"New York",36000,6.9
+"Massachusetts",25000,6.8
+"Michigan",26000,6.8
+"Kansas",20000,6.7
+"Minnesota",27000,6.1
+"Rhode Island",44000,5.9
+"Vermont",50000,5.9
+"Nebraska",31000,5.8
+"Maine",23000,5.4
+"New Hampshire",33000,5.3
+"Idaho",16000,5.2
+"North Dakota",38000,5.0
+"Arizona",04000,4.8
+"South Dakota",46000,4.8
+"Utah",49000,4.7
+"Montana",30000,4.6
+"Colorado",08000,4.5
+"New Mexico",35000,4.5
+"Nevada",32000,4.2
+"Hawaii",15000,3.6
+"Wyoming",56000,3.6
+"Puerto Rico",72001,NA
+
+Suggested Citation:
+HDPulse: An Ecosystem of Minority Health and Health Disparities Resources. National Institute on Minority Health and Health Disparities. Created 4/2/2025. Available from https://hdpulse.nimhd.nih.gov
+
+Notes:
+Source: National Environmental Public Health Tracking Network [ https://ephtracking.cdc.gov/DataExplorer/ ] from the CDC.
+Average daily density of fine particulate matter in micrograms per cubic meter (PM2.5).
+
+NA: Some data are not available or suppressed due to insufficient counts.
