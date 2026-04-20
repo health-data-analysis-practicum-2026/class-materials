@@ -1,0 +1,812 @@
+---
+title: "Final Project"
+author: "Paloma Mitra"
+date: "May 12th, 2021 (Final Draft)"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, fig.width=10, fig.height=7)
+```
+
+```{r libraries, include = FALSE, echo = FALSE}
+library(tidyverse)
+library(haven)
+library(broom)
+library(survey)
+library(ggpubr)
+library(ggrepel)
+library(kableExtra)
+library(RColorBrewer)
+library(plotrix)
+library(knitr)
+library(gtsummary)
+library(dplyr)
+library(gt)
+library(naniar)
+library(likert)
+
+```
+
+### Question of interest
+
+What is the relationship between types of incentives received and how community health workers (Kenya and Uganda) score various job attributes?
+
+### Data & Introduction
+
+**Introduction:**
+The data used in this project comes from surveys administered in Kenya and Uganda with community health workers, gathering information on the types and amount of various incentives (ex. trainings, compensation) they currently receive, respondent demographics, and how important various job attributes were to them. Part of this survey was also a discrete choice experiment meant to elucidate how important job attributes were relative to one another, but this was not analyzed in this project.
+
+The data is not downloadable for privacy reasons, but survey tools have been uploaded to GitHub for reference.
+
+### Variables of interest
+
+In this project, variables about existing job attributes/incentives (ex. compensation, training), respondent demographics, and six job attributes pulled from a motivation module in the survey.
+
+* **Outcome variable:** 6 separate job attributes: quality of supervision, feelings of security, growth opportunities, adaptive management, peer respect, and compensation.
+* **Primary predictor variable:** compensation: amount of monetary compensation currently received
+* **Possible confounders:** age, sex, religion, education, marital status, country, trainings
+* **Potential effect modifiers:** age, sex, religion, education, marital status, country
+
+```{r read, include=FALSE}
+
+DCE_Kenya <- read_dta("data/HDAP DCE Datasets/Kenya Dataset/DCE_Kenya_v1_FINAL_Cleaned_NOV052019.dta")
+
+DCE_Uganda <- read_dta("data/HDAP DCE Datasets/Uganda Dataset/DCE_Uganda_MergedStructured_Feb25_2020.dta")
+
+```
+
+```{r select, include = FALSE, echo = FALSE}
+
+##Kenya
+DCE_Kenya_rename <- DCE_Kenya %>%
+  select(###Demographics
+         facility = A8_fac_typ,
+         subcounty = A2_subcounty,
+         age = B1b_age,
+         religion = B4_religion,
+         sex = A6_chwsex,
+         educate = B2_schlevel,
+         marital = B5_status,
+         ###Other Variables
+         other_primary = B8_prsrc, ##other primary source of income
+         ###Training
+         initial_training = C1_inittrain,
+         practical_training = C5_prct_trn, ##practical training/support
+         refresher_training = C6a_rfstrn,
+         ###Compensation
+         frequency_compensation = B15_regcomp,
+         amount_compensation = B16_muchfinc,
+         ###Motivation Module
+         F1a_quality_of_supervision,
+         F1b_feeling_secure,
+         F1c_growth_opportunities,
+         F1d_adaptive_management,
+         F1e_peer_respect,
+         F1f_compensation)
+  
+DCE_Kenya_rename <- DCE_Kenya_rename %>%
+  replace_with_na(replace = list(age = 98))
+
+##Uganda
+DCE_Uganda_distinct <- distinct(DCE_Uganda, personid, .keep_all = TRUE)
+DCE_Uganda_distinct
+
+DCE_Uganda_rename <- 
+  DCE_Uganda_distinct %>%
+  select(###Demographics
+         facility = A5_fac_typ,
+         district =  A2_district,
+         chw_type = A4p2_chw,
+         age = B1b_age,
+         religion = B4_religion,
+         sex = B2_RespSex,
+         educate = B3_schlevel, ####the Data Dictionary disagrees with this: says B3a_highest_lev should have 0:5 levels, but in the actual dataset, it goes up to 6 or 7, and in the survey B3a is its own question with an open response
+         marital = B5_status,
+         ###Other Variables
+         other_primary = B8_prsrc, ##other primary source of income
+         ###Training
+         initial_training = C1_inittrain,
+         practical_training = C5_prct_trn, ##practical training/support
+         refresher_training = C6_rfstrn,
+         ###Compensation
+         frequency_compensation = B15_regcomp,
+         amount_compensation = B16_muchfinc,
+         ###Motivation Module
+         F1a_quality_of_supervision,
+         F1b_feeling_secure,
+         F1c_growth_opportunities,
+         F1d_adaptive_management,
+         F1e_peer_respect,
+         F1f_compensation)
+
+DCE_Uganda_rename <- DCE_Uganda_rename %>%
+  replace_with_na(replace = list(age = 98))
+
+```
+
+```{r rename, include = FALSE, echo = FALSE}
+
+dce_ke <- DCE_Kenya_rename %>%
+  mutate(##Demographics
+         facility = factor(facility, levels = c(1,2,3,88),
+              labels = c('Hospital', 'Health Centre', 'Dispensary', 'Other')),
+         subcounty = factor(subcounty, levels = c(1,2,3,4),
+              labels = c('Kilifi North', 'Kaloleni', 'Naitiri', 'Webuye West')),
+         sex = factor(sex, levels = c(0,1),
+              labels = c('Male', 'Female')),
+         religion = factor(religion, levels = c(0,1,2,88),
+              labels = c('Christian','Muslim','None','Other')),
+         educate = factor(educate, levels = c(0:4),
+              labels = c('Never attended', 'Nursery', 'Primary', 'Secondary', 'College/University/Vocational')),
+         marital = factor(marital, levels = c(0:3),
+              labels = c('Never married', 'Married/living together', 'Divorced/separated', 'Widowed')),
+         ##Other Variables
+         other_primary = factor(other_primary, levels = c(0,1),
+              labels = c('No','Yes')),
+         ##Training
+         initial_training = factor(initial_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         practical_training = factor(practical_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         refresher_training = factor(refresher_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         ###Compensation
+         frequency_compensation = factor(frequency_compensation, levels = c(0,1,2,3,4,88),
+              labels = c('Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Ad-hoc', 'Other')),
+         ##Motivation Module
+         F1a_quality_of_supervision = factor(F1a_quality_of_supervision, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1b_feeling_secure = factor(F1b_feeling_secure, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1c_growth_opportunities = factor(F1c_growth_opportunities, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1d_adaptive_management = factor(F1d_adaptive_management, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1e_peer_respect = factor(F1e_peer_respect, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1f_compensation = factor(F1f_compensation, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important'))
+         )
+  
+dce_ug <- DCE_Uganda_rename %>%
+  mutate(##Demographics
+         facility = factor(facility, levels = c(1,2,3,4, 88),
+              labels = c('Hospital', 'Health Centre 4', 'Health Centre 3', 'Health Centre 2', 'Other')),
+         district = factor(district, levels = c(1,2,3,4,5,6,7,8),
+              labels = c('Lira', 'Mayuge', 'Kabale', 'Arua', 'Ntugamo', 'Nakapiripiriti', 'Wakiso (Entebbe Municipality)', 'Kabarole')),
+         chw_type = factor(chw_type, levels = c(1,2,3,4,5),
+              labels = c('VHT', 'CHP', 'VHT Coordinator', 'Both VHT/CHP', 'Other')),
+         sex = factor(sex, levels = c(0,1),
+              labels = c('Male', 'Female')),
+         religion = factor(religion, levels = c(0,1,2,88),
+              labels = c('Christian','Muslim','None','Other')),
+         educate = factor(educate, levels = c(0:4),
+              labels = c('Never attended', 'Nursery', 'Primary', 'Secondary', 'College/University/Vocational')), 
+         marital = factor(marital, levels = c(0:3),
+              labels = c('Never married', 'Married/living together', 'Divorced/separated', 'Widowed')),
+         ##Other Variables
+         other_primary = factor(other_primary, levels = c(0,1),
+              labels = c('No','Yes')),
+         ##Training
+         initial_training = factor(initial_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         practical_training = factor(practical_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         refresher_training = factor(refresher_training, levels = c(0,1),
+              labels = c('No', 'Yes')),
+         ###Compensation
+         frequency_compensation = factor(frequency_compensation, levels = c(0,1,2,3,4,88),
+              labels = c('Weekly', 'Monthly', 'Quarterly', 'Semi-Annual', 'Ad-hoc', 'Other')),
+         ##Motivation Module
+         F1a_quality_of_supervision = factor(F1a_quality_of_supervision, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1b_feeling_secure = factor(F1b_feeling_secure, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1c_growth_opportunities = factor(F1c_growth_opportunities, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1d_adaptive_management = factor(F1d_adaptive_management, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1e_peer_respect = factor(F1e_peer_respect, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important')),
+         F1f_compensation = factor(F1f_compensation, levels = c(1:3),
+              labels = c('Not Very Important', 'Important', 'Very Important'))
+         )
+
+dce_ke <- dce_ke %>%
+  mutate(amount_compensation = (amount_compensation*0.0092))
+
+dce_ke <- dce_ke %>%
+mutate(log10_compensation = log10(amount_compensation))
+
+dce_ug <- dce_ug %>%
+  mutate(amount_compensation = (amount_compensation*0.00028))
+
+dce_ug <- dce_ug %>%
+mutate(log10_compensation = log10(amount_compensation))
+
+
+```
+
+```{r combine, echo = FALSE}
+
+dce_ke <- dce_ke %>%
+  mutate(trainings = factor(initial_training == "No" | practical_training == "No" | refresher_training == "No",
+                            levels = c(FALSE, TRUE),
+                            labels = c("All trainings received", "Not all trainings")))
+
+training_test_ke <- dce_ke %>%
+  count(trainings) %>%
+  group_by(trainings)
+
+dce_ug <- dce_ug %>%
+  mutate(trainings = factor(initial_training == "No" | practical_training == "No" | refresher_training == "No",
+                            levels = c(FALSE, TRUE),
+                            labels = c("All trainings received", "Not all trainings")))
+
+training_test_ug <- dce_ug %>%
+  count(trainings) %>%
+  group_by(trainings)
+
+```
+
+### Directed acyclic graph (DAG)
+
+```{r, echo = FALSE, fig.width=5,fig.height=3.5, out.extra='style="float:left; padding:10px"'}
+knitr::include_graphics("data/HDAP DCE Datasets/DAG.png")
+```
+
+Six separate regression models are created, but this is one generic DAG as the same underlying relationship was investigated for each outcome in the Motivation Module. 
+
+**How variables were selected:**
+
+```{r respondent characteristics, echo = FALSE}
+##combining KE and UG datasets
+##Table 1: combining all variables that make sense, so not facility (different levels), region (subcounty versus district), or chw_type (only UG)
+join_ke <- dce_ke %>%
+  select(age, sex, religion, educate, marital, initial_training, practical_training, refresher_training, trainings)
+join_ke <- join_ke %>% mutate(country = "Kenya",
+                              age = (as.integer(age)),
+                              country = (as.factor(country)))
+
+join_ug <- dce_ug %>%
+  select(age, sex, religion, educate, marital, initial_training, practical_training, refresher_training, trainings)
+join_ug <- join_ug %>% mutate(country = "Uganda",
+                              age = (as.integer(age)),
+                              country = (as.factor(country)))
+
+join_dce <- full_join(join_ke, join_ug, by = c("age", "sex", "religion", "educate", "marital", "initial_training", "practical_training", "refresher_training", "trainings", "country"))
+
+demo_table <- join_dce %>%
+ select(age, sex, religion, educate, marital, country) %>%
+  tbl_summary(
+    by = country,
+    statistic = list(all_continuous() ~ "{mean} ({sd})"),
+    digits = all_continuous() ~ 2,
+    label = list(age ~ "Age",
+             sex ~ "Sex",
+             religion ~ "Religion",
+             educate ~ "Education",
+             marital ~ "Marital Status")
+  ) %>%
+  add_overall() %>%
+  bold_labels() %>%
+  as_gt() %>%
+  tab_header(title = "Respondent Characteristics")
+
+demo_table
+
+```
+
+### Primary Predictor(s)
+
+**Trainings:**
+Across both countries, nearly all CHWs received all initial, practical, and refresher training. 
+
+```{r trainings, echo = FALSE, out.width= "45%", out.extra='style="float:left; padding:10px"'}
+
+training_table <- join_dce %>% 
+  select(initial_training, practical_training, refresher_training, trainings, country) %>%
+  tbl_summary(
+    by = country,
+    label = list(initial_training ~ "Initial Training",
+             practical_training ~ "Practical Training",
+             refresher_training ~ "Refresher Training",
+             trainings ~ "All Trainings")
+  ) %>%
+  add_overall() %>%
+  bold_labels() %>%
+  as_gt() %>%
+  tab_header(title = "Trainings")
+training_table
+
+```
+
+**Compensation:**
+As `trainings` was not a very informative primary predictor because of the low variability in responses, I decided to choose `compensation`. However, as Uganda and Kenya have different currencies, this variable was standardized by converting to USD. Additionally, the initial boxplots for Ugandan `compensation` were fairly skewed, making a log10 conversion ideal for comparison within `country` type and across countries.
+
+```{r compensation, echo = FALSE}
+
+join_compensation_ke <- dce_ke %>%
+  select(log10_compensation, educate)
+join_compensation_ke <- join_compensation_ke %>% mutate(Country = "Kenya",
+                              country = (as.factor(Country)))
+
+join_compensation_ug <- dce_ug %>%
+  select(log10_compensation, educate)
+join_compensation_ug <- join_compensation_ug %>% mutate(Country = "Uganda",
+                              country = (as.factor(Country)))
+
+join_compensation <- full_join(join_compensation_ke, join_compensation_ug, by = c("log10_compensation", "Country", "educate"))
+
+join_compensation <- join_compensation %>% 
+  mutate(educate = factor(educate, levels = c('Never attended', 'Nursery', 'Primary', 'Secondary', 'College/University/Vocational'),
+              labels = c('Primary or less', 'Primary or less', 'Primary or less', 'Secondary', 'College/University/Vocational')))
+
+compensation_plots <- join_compensation %>%
+ggplot() + 
+  geom_boxplot(aes(x = educate, y = log10_compensation, fill = Country), varwidth = TRUE) +
+  labs(title = "Distribution of Compensation by Education",
+       subtitle = "Split by country",
+       x ="Education status",
+       y = "log10(Compensation (USD))")  +
+  scale_fill_brewer(palette = "PuBuGn")
+compensation_plots
+
+```
+
+`educate` was a variable of interest before Dr. Jager's comments. After combining 'Never attended', 'Nursery', and 'Primary' levels however, it did not remain a statistically significant variable in the regression model. When considering compensation amounts by education status, split by country, it is evident that the major difference is by `country,` where Kenyan CHWs receive higher amounts of monetary compensation across all education levels compared to Ugandan CHWs. While the upper and lower quartiles for Primary, Secondary, and College/University/Vocational in overlap, the upper quartile for Secondary and College/University/Vocational in Kenya exceeds the upper quartile for Primary. This indicates that education status within Uganda has less of an influence on amount of compensation received compared to in Kenya.
+
+
+### Outcomes
+
+```{r Motivation Combini, echo = FALSE}
+
+join_ke_motiv <- DCE_Kenya_rename %>%
+  select(F1a_quality_of_supervision, F1b_feeling_secure, F1c_growth_opportunities, F1d_adaptive_management, F1e_peer_respect, F1f_compensation)
+join_ke_motiv <- join_ke_motiv %>% mutate(country = "Kenya")
+
+join_ug_motiv <- DCE_Uganda_rename %>%
+  select(F1a_quality_of_supervision, F1b_feeling_secure, F1c_growth_opportunities, F1d_adaptive_management, F1e_peer_respect, F1f_compensation)
+join_ug_motiv <- join_ug_motiv %>% mutate(country = "Uganda")
+
+join_motiv <- full_join(join_ke_motiv, join_ug_motiv, by = c("F1a_quality_of_supervision", "F1b_feeling_secure", "F1c_growth_opportunities", "F1d_adaptive_management", "F1e_peer_respect", "F1f_compensation", "country"))
+
+join_motivation <- as.data.frame(join_motiv[,1:6])
+
+for(i in 1:ncol(join_motivation)) {
+  join_motivation[,i] = factor(join_motivation[,i],
+                             levels = 1:3,
+                             labels = c("Not Very Important", "Important", "Very Important"),
+                             ordered = TRUE)
+}
+join_motivation <- bind_cols(join_motivation)
+
+join_motivation <- join_motivation %>%
+  rename("Quality of supervision" = F1a_quality_of_supervision,
+         "Feeling secure" = F1b_feeling_secure,
+         "Growth opportunities" = F1c_growth_opportunities,
+         "Adaptive management" = F1d_adaptive_management,
+         "Peer respect" = F1e_peer_respect,
+         "Compensation" = F1f_compensation)
+
+join_motivation <- as.data.frame(join_motivation)
+
+join_plot_motivation_title <- "How important are the following aspects of your work?"
+join_plot_motivation <- plot(likert(join_motivation), centered = FALSE) + ggtitle(join_plot_motivation_title)
+join_plot_motivation
+
+```
+
+```{r, echo = FALSE, out.width= "65%", out.extra='style="float:right; padding:10px"'}
+knitr::include_graphics("data/HDAP DCE Datasets/MotivationModule.png")
+```
+
+### Analysis plan
+
+Potential confounders will be included in the analysis.
+
+As outcomes will be treated as binary, logistic regression will be used for each of the six models. To control for confounding, potential confounders were included in each model and were kept if results were statistically significant.
+
+**Combining Levels:**
+The outcomes in this project are from a six question motivation module found in both surveys. 6 separate logistic regression models were created to address each question. In addition, the levels of the variable "Not Important" and "Important" were combined to form a level called "Less Important" so that logistic regression could be used (0, 1). Similarly, for some of the variables included in the Respondent Demographics table, levels with low numbers of respondents (<8-10%, with the exception of education) have been combined to form a level called "Other".
+
+```{r models, echo = FALSE}
+
+join_ke_model <- dce_ke %>%
+  select(age, sex, religion, educate, marital, trainings, log10_compensation, F1a_quality_of_supervision, F1b_feeling_secure, F1c_growth_opportunities, F1d_adaptive_management, F1e_peer_respect, F1f_compensation, frequency_compensation)
+join_ke_model <- join_ke_model %>% mutate(country = "Kenya",
+                              age = (as.integer(age)),
+                              country = (as.factor(country)))
+
+join_ug_model <- dce_ug %>%
+  select(age, sex, religion, educate, marital, trainings, log10_compensation, F1a_quality_of_supervision, F1b_feeling_secure, F1c_growth_opportunities, F1d_adaptive_management, F1e_peer_respect, F1f_compensation, frequency_compensation)
+join_ug_model <- join_ug_model %>% mutate(country = "Uganda",
+                              age = (as.integer(age)),
+                              country = (as.factor(country)))
+
+join_model <- full_join(join_ke_model, join_ug_model,by = c("age", "sex", "religion", "educate", "marital", "trainings", "log10_compensation", "F1a_quality_of_supervision", "F1b_feeling_secure", "F1c_growth_opportunities", "F1d_adaptive_management", "F1e_peer_respect", "F1f_compensation", "country", "frequency_compensation"))
+
+join_model <- join_model %>%
+  drop_na()
+
+##if dropping NAs loses a lot for the figures, only use for MODEL
+###use !is.na(variable_name) with filter function:
+###filter(data_frame_name, !is.na(variable_name))
+
+```
+
+```{r, recode again, echo = FALSE}
+
+join_model <- join_model %>%
+  mutate(religion = factor(religion, levels = c('Muslim','None','Other', "Christian"),
+              labels = c("Other", "Other", "Other", "Christian")),
+         marital = factor(marital, levels = c('Never married', 'Married/living together', 'Divorced/separated', 'Widowed'),
+              labels = c("Other", "Married/living together", "Other", "Other")),
+         educate = factor(educate, levels = c('Never attended', 'Nursery', 'Primary', 'Secondary', 'College/University/Vocational'),
+              labels = c('Primary or less', 'Primary or less', 'Primary or less', 'Secondary', 'College/University/Vocational')), 
+         F1a_quality_of_supervision = factor(F1a_quality_of_supervision, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")),
+        F1b_feeling_secure = factor(F1b_feeling_secure, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")),
+        F1c_growth_opportunities = factor(F1c_growth_opportunities, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")),
+        F1d_adaptive_management = factor(F1d_adaptive_management, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")),
+        F1e_peer_respect = factor(F1e_peer_respect, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")),
+        F1f_compensation = factor(F1f_compensation, levels = c("Not Very Important", "Important", "Very Important"),
+              labels = c("Less Important", "Less Important", "Very Important")))
+
+```
+
+```{r by outcomes, echo = FALSE}
+
+table_educate_1 <- join_model %>%
+  count(educate, F1a_quality_of_supervision) %>%
+  group_by(educate) %>%
+  mutate(percent1 = round((n/sum(n)*100), 2))
+table_educate_1 <- table_educate_1 %>%
+  filter(F1a_quality_of_supervision == "Very Important") %>%
+  select(educate, percent1)
+
+table_educate_2 <- join_model %>%
+  count(educate, F1b_feeling_secure) %>%
+  group_by(educate) %>%
+  mutate(percent2 = round((n/sum(n)*100), 2))
+table_educate_2 <- table_educate_2 %>%
+  filter(F1b_feeling_secure == "Very Important") %>%
+  select(educate, percent2)
+
+table_educate_3 <- join_model %>%
+  count(educate, F1c_growth_opportunities) %>%
+  group_by(educate) %>%
+  mutate(percent3 = round((n/sum(n)*100), 2))
+table_educate_3 <- table_educate_3 %>%
+  filter(F1c_growth_opportunities == "Very Important") %>%
+  select(educate, percent3)
+
+table_educate_4 <- join_model %>%
+  count(educate, F1d_adaptive_management) %>%
+  group_by(educate) %>%
+  mutate(percent4 = round((n/sum(n)*100), 2))
+table_educate_4 <- table_educate_4 %>%
+  filter(F1d_adaptive_management == "Very Important") %>%
+  select(educate, percent4)
+
+table_educate_5 <- join_model %>%
+  count(educate, F1e_peer_respect) %>%
+  group_by(educate) %>%
+  mutate(percent5 = round((n/sum(n)*100), 2))
+table_educate_5 <- table_educate_5 %>%
+  filter(F1e_peer_respect == "Very Important") %>%
+  select(educate, percent5)
+
+table_educate_6 <- join_model %>%
+  count(educate, F1f_compensation) %>%
+  group_by(educate) %>%
+  mutate(percent6 = round((n/sum(n)*100), 2))
+table_educate_6 <- table_educate_6 %>%
+  filter(F1f_compensation == "Very Important") %>%
+  select(educate, percent6)
+
+##Irritation
+table_educate <- full_join(table_educate_1, table_educate_2, by = c("educate"))
+table_educate <- full_join(table_educate, table_educate_3, by = c("educate"))
+table_educate <- full_join(table_educate, table_educate_4, by = c("educate"))
+table_educate <- full_join(table_educate, table_educate_5, by = c("educate"))
+table_educate <- full_join(table_educate, table_educate_6, by = c("educate"))
+
+table_educate <- table_educate %>% 
+  pivot_longer(!educate, names_to = "Outcome", values_to = "percent")
+             
+plot_educate <- table_educate %>%
+  ggplot() +
+  geom_bar(aes(x = educate, y = percent, fill = Outcome), stat = "identity", position = "dodge") +
+  labs(title = "Motivation Outcomes by Education Status",
+       subtitle = "Percentage choosing 'Very Important'",
+       x = "Education level",
+       y = "Percentage (%)") +
+  geom_text(aes(x = educate, y = percent+2, label = percent, group = Outcome), position = position_dodge(width = 0.9), size = 2.5, angle = 25) +
+  scale_fill_manual(name="Outcome",labels=c("Quality of supervision", "Feeling secure", "Growth opportunities", "Adaptive management", "Peer respect", "Compensation"), values=c("#F5D0DC", "#F8E2DF", "#FCF9F2", "#E6F0F0", "#D8DDFE", "#D7CFF6"))
+plot_educate
+
+
+```
+
+**By Outcome Discussion:**
+This graph had more importance before combining levels, as now across `educate` levels, the percentage of those choosing 'Very Important' is similar across all education levels for all six outcomes as well as between outcomes.
+```{r}
+###I also left this because I worked so hard on it >:(
+```
+
+## Modeling {.tabset}
+The results below are of the primary models constructed, and the second model selected based on what variables were statistically significant or necessary (primary predictor always included). AICs for the models were also compared and the model with the lower AIC was selected overall.
+```{r}
+###I could not get the in-line code with gt and gtsummary to work at all, so I did it manually!
+```
+
+### Quality of supervision
+
+`country`: Holding all else constant, those from Uganda have a 128% increased odds of choosing 'Very Important' for how important quality of supervision is as a job attribute.
+
+**Quality of supervision: Model 1**
+$$log(Quality \ of \ supervision) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot religion + \beta_4 \cdot age + \beta_5 \cdot marital + \beta_6 \cdot educate + \beta_7 \cdot sex$$
+**Quality of supervision: Model 2**
+$$log(Quality \ of \ supervision) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country$$
+
+```{r model 1, echo = FALSE} 
+
+model_F1a <- glm(F1a_quality_of_supervision ~ log10_compensation + country + religion + age + marital + educate + sex, family = binomial(link = "logit"), data = join_model)
+
+model_F1a_2 <- glm(F1a_quality_of_supervision ~ log10_compensation + country, family = binomial(link = "logit"), data = join_model)
+
+model_F1a_2t <- model_F1a_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             country ~ "Country") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Quality of supervision: Logistic Regression Model")
+model_F1a_2t
+
+AIC1 <- AIC(model_F1a, model_F1a_2)
+AIC1 <- as.data.frame(AIC1) %>%
+  rownames_to_column()
+AIC1$rowname <- c("Model 1", "Model 2")
+AIC1%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 1: AIC Results",
+        align = c("l", "r"))
+
+```
+
+### Feeling secure
+
+`log10_compensation`: Holding all else constant, a one-unit increase in log10(compensation) was associated with a 88% increased odds of choosing 'Very Important' for how important feeling secure is as a job attribute.
+
+`country`: Holding all else constant, those from Uganda have a 200% increased odds of choosing 'Very Important' for how important feeling secure is as a job attribute.
+
+**Feeling secure: Model 1**
+$$log(Feeling \ secure) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot religion + \beta_4 \cdot age + \beta_5 \cdot marital + \beta_6 \cdot educate + \beta_7 \cdot sex$$
+**Feeling secure: Model 2**
+$$log(Feeling \ secure) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country$$
+
+```{r model 2, echo = FALSE}
+
+model_F1b <- glm(F1b_feeling_secure ~ log10_compensation + country + religion + age + marital + educate + sex, family = binomial, data = join_model)
+
+model_F1b_2 <- glm(F1b_feeling_secure ~ log10_compensation + country, family = binomial, data = join_model)
+
+model_F1b_2t <- model_F1b_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             country ~ "Country") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Feeling secure: Logistic Regression Model")
+model_F1b_2t
+
+AIC2 <- AIC(model_F1b, model_F1b_2)
+AIC2 <- as.data.frame(AIC2) %>%
+  rownames_to_column()
+AIC2$rowname <- c("Model 1", "Model 2")
+AIC2%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 2: AIC Results",
+        align = c("l", "r"))
+
+```
+
+### Growth opportunities
+
+Neither `log10_compensation` nor `country` were statistically significant.
+
+**Growth opportunities: Model 1**
+$$log(growth \ opportunities) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot religion + \beta_4 \cdot age + \beta_5 \cdot marital + \beta_6 \cdot educate + \beta_7 \cdot sex$$
+**Growth opportunities: Model 2**
+$$log(growth \ opportunities) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country$$
+```{r model 3, echo = FALSE}
+
+model_F1c <- glm(F1c_growth_opportunities ~ log10_compensation + country + religion + age + marital + educate + sex, family = binomial, data = join_model)
+
+model_F1c_2 <- glm(F1c_growth_opportunities ~ log10_compensation + country, family = binomial, data = join_model)
+
+model_F1c_2t <- model_F1c_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             country ~ "Country") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Growth opportunities: Logistic Regression Model")
+model_F1c_2t
+
+AIC3 <- AIC(model_F1c, model_F1c_2)
+AIC3 <- as.data.frame(AIC3) %>%
+  rownames_to_column()
+AIC3$rowname <- c("Model 1", "Model 2")
+AIC3%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 3: AIC Results",
+        align = c("l", "r"))
+
+```
+
+### Adaptive management
+
+`trainings`: Holding all else constant, those who did not receive all requisite trainings have a 57% decreased odds of choosing 'Very Important' for how important adaptive management is as a job attribute.
+
+**Adaptive management: Model 1**
+$$log(adaptive \ management) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot trainings + \beta_3 \cdot country + \beta_4 \cdot religion + \beta_5 \cdot age + \beta_6 \cdot marital + \beta_7 \cdot educate + \beta_8 \cdot sex$$
+**Adaptive management: Model 2**
+$$log(adaptive \ management) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot trainings$$
+
+```{r model 4, echo = FALSE}
+
+model_F1d <- glm(F1d_adaptive_management ~ log10_compensation + trainings + country + religion + age + marital + educate + sex, family = binomial, data = join_model)
+
+model_F1d_2 <- glm(F1d_adaptive_management ~ log10_compensation + trainings, family = binomial, data = join_model)
+
+model_F1d_2t <- model_F1d_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             trainings ~ "Trainings") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Adaptive management: Logistic Regression Model")
+model_F1d_2t
+
+AIC4 <- AIC(model_F1d, model_F1d_2)
+AIC4 <- as.data.frame(AIC4) %>%
+  rownames_to_column()
+AIC4$rowname <- c("Model 1", "Model 2")
+AIC4%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 4: AIC Results",
+        align = c("l", "r"))
+
+```
+
+### Peer respect
+
+`country`: Holding all else constant, those from Uganda have a 112% increased odds of choosing 'Very Important' for how important peer respect is as a job attribute.
+
+`age`: Holding all else constant, a one-unit increase in age was associated with a 3% increased odds of choosing 'Very Important' for how important peer respect is as a job attribute.
+
+**Peer Respect: Model 1**
+$$log(peer \ respect) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot religion + \beta_4 \cdot age + \beta_5 \cdot marital + \beta_6 \cdot educate + \beta_7 \cdot sex$$
+**Peer Respect: Model 2**
+$$log(peer \ respect) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot age$$
+
+```{r model 5, echo = FALSE}
+
+model_F1e <- glm(F1e_peer_respect ~ log10_compensation + country + religion + age + marital + educate + sex, family = binomial, data = join_model)
+
+model_F1e_2 <- glm(F1e_peer_respect ~ log10_compensation + country + age, family = binomial, data = join_model)
+
+model_F1e_2t <- model_F1e_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             country ~ "Country",
+             age ~ "Age") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Peer Respect: Logistic Regression Model")
+model_F1e_2t
+
+AIC5 <- AIC(model_F1e, model_F1e_2)
+AIC5 <- as.data.frame(AIC5) %>%
+  rownames_to_column()
+AIC5$rowname <- c("Model 1", "Model 2")
+AIC5%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 5: AIC Results",
+        align = c("l", "r"))
+
+
+```
+
+### Compensation
+
+`log10_compensation`: Holding all else constant, a one-unit increase in log10(compensation) was associated with a 49% decreased odds of choosing 'Very Important' for how important compensation is as a job attribute.
+
+`country`: Holding all else constant, those from Uganda have a 49% decreased odds of choosing 'Very Important' for how important compensation is as a job attribute.
+
+**Compensation: Model 1**
+$$log(Compensation) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country + \beta_3 \cdot religion + \beta_4 \cdot age + \beta_5 \cdot marital + \beta_6 \cdot educate + \beta_7 \cdot sex$$
+**Compensation: Model 2**
+$$log(Compensation) = \beta_0 + \beta_1 \cdot (log(compensation)) + \beta_2 \cdot country$$
+
+```{r model 6, echo = FALSE}
+
+model_F1f <- glm(F1f_compensation ~ log10_compensation + country + religion + age + marital + educate + sex, family = binomial, data = join_model)
+
+model_F1f_2 <- glm(F1f_compensation ~ log10_compensation + country, family = binomial, data = join_model)
+
+model_F1f_2t <- model_F1f_2 %>%
+  tbl_regression(exponentiate = TRUE,
+                 label = list(log10_compensation ~ "log10(compensation)",
+             country ~ "Country") 
+             ) %>%
+  bold_labels()%>%
+  bold_p() %>%
+  as_gt() %>%
+  tab_header(title = "Compensation: Logistic Regression Model")
+model_F1f_2t
+
+AIC6 <- AIC(model_F1f, model_F1f_2)
+AIC6 <- as.data.frame(AIC6) %>%
+  rownames_to_column()
+AIC6$rowname <- c("Model 1", "Model 2")
+AIC6%>%
+  select(`Model` = rowname, df, AIC) %>%
+  kable("pipe",
+        digits = 2,
+        caption = "Table 6: AIC Results",
+        align = c("l", "r"))
+
+```
+
+## {-}
+
+**Comparing Overall Results:**
+Overall, `country` level held the largest bearing on whether or not a CHW was likely to choose 'Very Important' for any select job attribute. While individual attributes--`peer respect` and `adaptive management` for instance--had, individually statistically significant variables such as `age` and `trainings`, trends across the six job attribute outcomes were less clear for those variables.
+
+For the primary predictor, compensation, increasing log10(compensation) did confer a lower "risk" of choosing 'Very Important' for the outcome job attribute `compensation`. For `feeling secure` there were increased odds for increasing log10(compensation). This may reflect on some mindset shift that comes with financial stability, but the influence of `country` is likely important when further exploring this relationship as Kenyan CHWs are also paid higher on average.  
+
+```{r submission_instructions, include=FALSE, eval=FALSE}
+REMINDER:  When you are ready to submit your assignment, do ALL of the following:
+
+* First, knit your .Rmd file to see if it will compile.  If it doesn't knit, you can still follow the steps below to submit your assignment, but please try to resolve the knitting issues before you submit.  You can reach out to us at phbiostats@jhu.edu for help!
+* Next you need to **commit** the changes you've made to the document.  Click the colorful Git button at the top of the RStudio window and select "Commit" from the menu.
+* In the window that opens, **stage** your changes by clicking the check boxes next to the Rmd file.
+* In the "Commit message" box, type a short description of what changes you've made, something like: `Completed assignment`
+* Click the "Commit" button on the bottom right.
+* You'll see a window that will tell you about the changes that you've made.  Click "Close" to close the window.  You've successfully committed! You can close this commit window now.
+* After committing, you must **push** your changes to the repository on Github.  Do this by clicking the colorful Git button again and select "Push Branch".  
+* Again, you'll see a window open that tells you your changes have been pushed!
+* If you want, you can look at your repository on [Github.com](https://github.com/) and should be able to see your changes there!  
+* You've successfully submitted your assignment :)
+```

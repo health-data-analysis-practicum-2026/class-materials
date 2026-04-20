@@ -1,0 +1,1004 @@
+---
+title: "Final Project"
+author: "Michael Wakeman"
+date: "5/3/2021"
+output:
+  bookdown::html_document2:
+    toc: true
+    toc_float: 
+      toc_collapsed: true
+    toc_depth: 3
+    number_sections: false
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, include = FALSE}
+library(tidyverse)
+library(readxl)
+library(naniar)
+library(magrittr)
+library(ggiraph)
+library(patchwork)
+library(bookdown)
+library(kableExtra)
+library(lmerTest)
+library(broom.mixed)
+library(usdata)
+```
+
+# Background and Question of Interest
+
+Opioids are a class of narcotics that are used to reduce pain, but are highly addictive. They have caused an epidemic in drug overdose deaths over the last decade. [According to the CDC](https://www.cdc.gov/drugoverdose/epidemic/index.html), "over 70% of the 70,630 [drug overdose] deaths in 2019 involved an Opioid." Historically, Opioid-related overdose deaths have increased since the 1990s. 
+
+The Open Case Studies Project, part of the Bloomberg American Health Initiative, has made several data projects available publicly for educational purposes. One of the projects focuses on Opioids in the United States. The [data set published for the project](https://www.opencasestudies.org/ocs-bp-opioid-rural-urban/#What_are_the_data), which was created using data from the US Census and The Washington Post, includes information on prescription Opioid pill shipments at the county-level from 2006 to 2014. `DOSAGE_UNIT` is a variable within the dataset that gives the number of pills (oxycodone or hydrocodone) that were shipped to pharmacies in a given county. It should be noted, however, that this data set does not include information on all U.S. counties. Additionally, [the Bureau of Labor Statistics publishes county-level unemployment statistics yearly](https://www.bls.gov/lau/#cntyaa). 
+
+Together, these two data sources were used to answer our question of interest: *Is there a relationship between prescription Opioid use and unemployment?*
+
+A previous study published in 2019 by [Hollingsworth et al.](https://www.sciencedirect.com/science/article/pii/S0167629617303387?casa_token=PjmxeTH9yV4AAAAA:dne46cKFupn2m7mcbtF3QnSGqKJrMvchIYEWRIhTDiqSqeVr1NSDdjRWebI30hUoM5yFXWggrg) found that "as the county unemployment rate increases by one percentage point, the Opioid death rate per 100,000 rises by 0.19 (3.6%) and the Opioid overdose ED visit rate per 100,000 increases by 0.95 (7.0%)." Based on these previous research findings, we hypothesize that higher rates of unemployment are associated with increased Opioid pill shipments.
+
+# Exploratory Data Analysis
+
+```{r data upload, include = FALSE}
+#Importing data sets
+original.data <- read_csv("Annual_opioid_data.csv")
+opioid.data <- original.data
+unemploymentdata06 <- read_excel("laucnty06.xlsx")
+unemploymentdata07 <- read_excel("laucnty07.xlsx")
+unemploymentdata08 <- read_excel("laucnty08.xlsx")
+unemploymentdata09 <- read_excel("laucnty09.xlsx")
+unemploymentdata10 <- read_excel("laucnty10.xlsx")
+unemploymentdata11 <- read_excel("laucnty11.xlsx")
+unemploymentdata12 <- read_excel("laucnty12.xlsx")
+unemploymentdata13 <- read_excel("laucnty13.xlsx")
+unemploymentdata14 <- read_excel("laucnty14.xlsx")
+unemployment.06 <- unemploymentdata06
+unemployment.07 <- unemploymentdata07
+unemployment.08 <- unemploymentdata08
+unemployment.09 <- unemploymentdata09
+unemployment.10 <- unemploymentdata10
+unemployment.11 <- unemploymentdata11
+unemployment.12 <- unemploymentdata12
+unemployment.13 <- unemploymentdata13
+unemployment.14 <- unemploymentdata14
+
+```
+
+```{r data merging, include = FALSE}
+#Merging data using locations, reworking unemployment for merging
+
+locations <- str_split(opioid.data$NAME, ", ", n = 2, simplify = TRUE)
+
+
+opioid.data$location <- str_c(locations[, 1], opioid.data$BUYER_STATE, sep = ", ")
+
+unemployment.06 <- tail(unemployment.06, -5)
+unemployment.06 <- unemployment.06 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.07 <- tail(unemployment.07, -5)
+unemployment.07 <- unemployment.07 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.08 <- tail(unemployment.08, -5)
+unemployment.08 <- unemployment.08 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.09 <- tail(unemployment.09, -5)
+unemployment.09 <- unemployment.09 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.10 <- tail(unemployment.10, -5)
+unemployment.10 <- unemployment.10 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.11 <- tail(unemployment.11, -5)
+unemployment.11 <- unemployment.11 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.12 <- tail(unemployment.12, -5)
+unemployment.12 <- unemployment.12 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.13 <- tail(unemployment.13, -5)
+unemployment.13 <- unemployment.13 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+unemployment.14 <- tail(unemployment.14, -5)
+unemployment.14 <- unemployment.14 %>%
+  select(location = "...4", 
+         year = "...5", 
+         labor.force = "...7", 
+         employed = "...8", 
+         unemployed = "...9", 
+         unemployed.rate = "...10")
+
+#Merged unemployment into one dataset first
+
+unemployment.datasets <- rbind(unemployment.06,
+                               unemployment.07,
+                               unemployment.08,
+                               unemployment.09,
+                               unemployment.10,
+                               unemployment.11,
+                               unemployment.12,
+                               unemployment.13,
+                               unemployment.14)
+
+#Then merged unemployment and opioid data
+
+
+mergeddata <- merge(opioid.data, unemployment.datasets, all.x = TRUE)
+
+
+```
+
+
+```{r missing data, include = FALSE}
+
+#Test for missing data
+
+sapply(mergeddata, function(x) sum(is.na(x)))
+missingdata <- mergeddata %>%
+  filter(is.na(employed)) 
+
+
+missingdata %>%
+  select(location) %>%
+  unique()
+
+unemployment.fixed <- unemployment.datasets
+
+#Recoding some differences in county/location naming
+
+unemployment.fixed$location <- gsub("Anchorage Borough/municipality, AK",
+                                    "Anchorage Municipality, AK",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Broomfield County/city, CO",
+                                    "Broomfield County, CO",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Denver County/city, CO",
+                                    "Denver County, CO",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("District of Columbia",
+                                    "District of Columbia, DC",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Honolulu County/city, HI",
+                                    "Honolulu County, HI",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Juneau Borough/city, AK",
+                                    "Juneau City and Borough, AK",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("LaSalle Parish, LA",
+                                    "La Salle Parish, LA",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Nantucket County/town, MA",
+                                    "Nantucket County, MA",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Wrangell-Petersburg Census Area, AK",
+                                    "Petersburg Borough, AK",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Philadelphia County/city, PA",
+                                    "Philadelphia County, PA",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("San Francisco County/city, CA",
+                                    "San Francisco County, CA",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Sitka Borough/city, AK",
+                                    "Sitka City and Borough, AK",
+                                    unemployment.fixed$location)
+unemployment.fixed$location <- gsub("Skagway-Hoonah-Angoon Census Area, AK",
+                                    "Skagway Municipality, AK",
+                                    unemployment.fixed$location)
+opioid.data$location <- gsub("Do.a Ana County, NM",
+                             "Dona Ana County, NM",
+                             opioid.data$location)
+
+#Recoding N.A. as missing
+
+unemployment.fixed <- unemployment.fixed %>%
+  replace_with_na(replace = list(labor.force = "N.A.",
+                                 employed = "N.A.",
+                                 unemployed = "N.A.",
+                                 unemployed.rate = "N.A."))
+
+#Merged with recoded data
+
+
+final.merged <- merge(opioid.data, unemployment.fixed, all.x = TRUE)
+
+#Test for missing again
+
+
+sapply(final.merged, function(x) sum(is.na(x)))
+
+
+final.merged %>%
+  filter(is.na(labor.force) == TRUE)
+
+
+#Dropped seven counties in 2006 without unemployment information
+
+final.merged <- drop_na(final.merged)
+
+```
+
+
+
+```{r data recoding, include = FALSE}
+
+#Fixing another data name error
+
+final.merged$NAME <- gsub("Do.a Ana County, New Mexico",
+                          "Dona Ana County, New Mexico",
+                          final.merged$NAME)
+
+#Recoding to numbers
+
+final.merged %<>%
+  mutate(labor.force = as.numeric(labor.force),
+         employed = as.numeric(employed),
+         unemployed = as.numeric(unemployed),
+         unemployed.rate = as.numeric(unemployed.rate))
+
+
+#Including three variables made in open case project
+
+
+final.merged %<>%
+  mutate(norm_dose = DOSAGE_UNIT / population)
+
+
+final.merged %<>% 
+  mutate(large_urban = case_when(population >= 200000 ~ "Large Urban",
+                                 population >= 50000 & 
+                                 population < 200000 ~ "Small Urban or Rural",
+                                 population < 50000 ~ "Small Urban or Rural"))
+
+final.merged %<>%
+  mutate(large_urban = factor(large_urban, 
+                                 levels = c("Small Urban or Rural", "Large Urban")))
+
+final.merged %<>%
+  mutate(Pills = DOSAGE_UNIT / 1000000)
+
+#Including full state names
+
+final.merged %<>%
+  mutate(statenames = usdata::abbr2state(BUYER_STATE))
+
+
+# Regional factor variable based on US Census definitions
+
+Northeast <- c("CT", "ME", "MA", "NH", "RI", "VT", "NJ", "NY", "PA")
+
+Midwest <- c("IL", "IN", "MI", "OH", "WI", "IA", "KS", "MN", "MO", "NE", "ND", "SD")
+
+South <- c("MD", "DE", "FL", "GA", "NC", "SC", "VA", "DC", "WV", "AL", "MS", "KY", "TN", "AR", "LA", "TX", "OK")
+
+West <- c("AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY", "AK", "CA", "OR", "WA", "HI")
+
+final.merged %<>%
+  mutate(Region = ifelse(BUYER_STATE %in% Northeast, "Northeast",
+                         ifelse(BUYER_STATE %in% Midwest, "Midwest",
+                                ifelse(BUYER_STATE %in% South, "South",
+                                       ifelse(BUYER_STATE %in% West, "West", 100)))))
+
+
+#Division factor variable based on US Census definitions
+
+NewEngland <- c("CT", "ME", "MA", "NH", "RI", "VT")
+
+MidAtlantic <- c("NJ", "NY", "PA")
+
+EastNorthCentral <- c("IL", "IN", "MI", "OH", "WI")
+
+WestNorthCentral <- c("IA", "KS", "MN", "MO", "NE", "ND", "SD")
+
+SouthAtlantic <- c("MD", "DE", "FL", "GA", "NC", "SC", "VA", "DC", "WV")
+
+EastSouthCentral <- c("AL", "MS", "KY", "TN")
+
+WestSouthCentral <- c("AR", "LA", "TX", "OK")
+
+Mountain <- c("AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY")
+
+Pacific <- c("AK", "CA", "OR", "WA", "HI")
+
+final.merged %<>%
+  mutate(Division = ifelse(BUYER_STATE %in% NewEngland, "New England",
+                           ifelse(BUYER_STATE %in% MidAtlantic, "Mid Atlantic",
+                                  ifelse(BUYER_STATE %in% EastNorthCentral, "East North Central",
+                                         ifelse(BUYER_STATE %in% WestNorthCentral, "West North Central",
+                                                ifelse(BUYER_STATE %in% SouthAtlantic, "South Atlantic",
+                                                       ifelse(BUYER_STATE %in% EastSouthCentral, "East South Central",
+                                                              ifelse(BUYER_STATE %in% WestSouthCentral, "West South Central",
+                                                                     ifelse(BUYER_STATE %in% Mountain, "Mountain",
+                                                                            ifelse(BUYER_STATE %in% Pacific, "Pacific", 100))))))))))
+
+#Setting as factors
+
+final.merged %<>%
+  mutate(Region = as.factor(Region),
+         Division = as.factor(Division))
+```
+
+```{r caption1, include = FALSE}
+
+#Changes in unemployment nationally
+  
+unemployment.nationally <- final.merged %>%
+  group_by(year) %>%
+  mutate(total.unemployed = sum(unemployed),
+         total.lf = sum(labor.force)) %>%
+  select(year, total.unemployed, total.lf) %>%
+  mutate(national.unemployment = (total.unemployed / total.lf) * 100) %>%
+  select(-total.unemployed, -total.lf) %>%
+  unique() %>%
+  ungroup()
+
+un.national.plot <- unemployment.nationally %>%
+  ggplot(aes(x = year, y = national.unemployment)) +
+  geom_line(size = 0.25,
+            color = "royalblue4") +
+  theme_classic(base_size = 9) +
+  ggtitle("U.S. Unemployment Rate") +
+  xlab("Year") +
+  ylab("Unemployment Rate (%)") +
+  geom_point_interactive(aes(tooltip = paste0(round(national.unemployment, 2),
+                                              "%")),
+                         color = "royalblue4")
+
+#Changes in pill shipments nationally
+
+pills.nationally <- final.merged %>%
+  group_by(year) %>%
+  mutate(total.pills = sum(Pills)) %>%
+  select(year, total.pills) %>%
+  unique() %>%
+  ungroup()
+
+pills.national.plot <- pills.nationally %>%
+  ggplot(aes(x = year, y = total.pills)) +
+  geom_line(size = 0.25,
+            color = "orangered4") +
+  theme_classic(base_size = 9) +
+  ggtitle("U.S. Opioid Pill Shipments") +
+  xlab("Year") +
+  ylab("Millions of Opioid Pills Shipped") +
+  geom_point_interactive(aes(tooltip = round(total.pills, 3)),
+                         color = "coral")
+
+#Combined, interactive national plot
+
+combinednationalplot <-
+  un.national.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  pills.national.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  plot_annotation(title = "Socioeconomic and Behavioral Trends in the U.S. (2006-2014)")
+
+figcap.national = paste0("Combined Plots of Unemployment, n = ", nrow(unemployment.nationally), " Observations, and Per Capita Opioid Pill Shipment Trends, n = ", nrow(pills.nationally), " Observations, at the National-level. Hover for more detail.")
+
+```
+
+```{r nationalplot, fig.cap = figcap.national, echo = FALSE, message = FALSE}
+
+girafe(ggobj = combinednationalplot, width_svg = 8, height_svg = 6)
+
+```
+
+Fig. \@ref(fig:nationalplot) displays how Opioid pill shipments and unemployment have changed nationally from 2006-2014. It appears that, in general, both increased up to 2010 and then proceeded to decline. However, the unemployment rate increased sharply due to the Great Recession, while Opioid pill shipments increased at an almost linear rate.
+
+```{r caption2, include = FALSE}
+
+#Changes in unemployment statewide
+
+unemployment.state <- final.merged %>%
+  group_by(BUYER_STATE, year) %>%
+  mutate(total.unemployed = sum(unemployed),
+         total.lf = sum(labor.force)) %>%
+  select(year, BUYER_STATE, total.unemployed, total.lf) %>%
+  mutate(state.unemployment = (total.unemployed / total.lf) * 100) %>%
+  select(-total.unemployed, -total.lf) %>%
+  unique() %>%
+  ungroup()
+
+un.state.plot <- unemployment.state %>%
+  ggplot(aes(x = year, y = state.unemployment, group = BUYER_STATE, color = BUYER_STATE)) +
+  geom_line_interactive(aes(tooltip = usdata::abbr2state(BUYER_STATE),
+                             data_id = BUYER_STATE)) +
+  theme_classic(base_size = 9) +
+  theme(legend.position = "none") +
+  ggtitle("Unemployment Rate by State") +
+  xlab("Year") +
+  ylab("Unemployment Rate (%)")
+
+#Changes in pill shipments statewide
+
+pills.statewide <- final.merged %>%
+  group_by(BUYER_STATE, year) %>%
+  mutate(total.pills = sum(DOSAGE_UNIT),
+         total.population = sum(population)) %>%
+  select(year, total.pills, BUYER_STATE, total.population) %>%
+  mutate(norm.state = total.pills / total.population) %>%
+  select(year, BUYER_STATE, total.pills, norm.state) %>%
+  unique() %>%
+  ungroup()
+
+pills.state.plot <- pills.statewide %>%
+  ggplot(aes(x = year, y = norm.state, group = BUYER_STATE, color = BUYER_STATE)) +
+  theme_classic(base_size = 9) +
+  ggtitle("Statewide Per Capita Opioid Pill Shipments") +
+  xlab("Year") +
+  ylab("Per Capita Opioid Pills Shipped") +
+  geom_line_interactive(aes(tooltip = usdata::abbr2state(BUYER_STATE),
+                             data_id = BUYER_STATE)) +
+  theme(legend.position = "none")
+
+#Combined, interactive statewide plot
+
+combinedstateplot <-
+  un.state.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  pills.state.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  plot_annotation(title = "Socioeconomic and Behavioral Trends by U.S. State (2006-2014)")
+
+figcap.stateinteractive = paste0("Combined Plots of Unemployment, n = ", nrow(pills.statewide), " Observations, and Per Capita Opioid Pill Shipment Trends, n = ", nrow(unemployment.state), " Observations, at the State-level. Hover for more detail.")
+
+
+```
+
+```{r stateinteractiveplot, fig.cap = figcap.stateinteractive, echo = FALSE, message = FALSE}
+
+girafe(ggobj = combinedstateplot, width_svg = 8, height_svg = 6,
+  options = list(
+    opts_hover_inv(css = "opacity:0.1;"),
+    opts_hover(css = "stroke-width:2;")
+  ))
+
+```
+
+Fig. \@ref(fig:stateinteractiveplot) displays how Opioid pill shipments and unemployment have changed at the state-level from 2006-2014. It should be noted that “state-level” was defined as any of the 50 U.S. states and Washington D.C. The relationship shown is broadly similar to that of Fig. \@ref(fig:nationalplot). It appears that all states had a significant increase in unemployment from 2007-2010 due to the Great Recession. This was then followed by a decline during the economic recovery. However, states had earlier and later recoveries, which is clear by earlier and later peak unemployment rates. Opioid pill shipments in general increased to about 2010 and then began to decline. However, some states have had continued increases in pill shipments from 2006-2014 and some states have only plateaued. These trends may be partially attributable to varying state laws on prescribing practices in addition to economic conditions. In general, states with the highest per capita rates of Opioid pill shipments were small and rural, such as West Virginia and Kentucky.
+
+```{r caption3, include = FALSE}
+
+#Relationship between unemployment and pill shipments statewide
+
+state.relationship <- final.merged %>%
+  group_by(BUYER_STATE, year) %>%
+  mutate(total.un = sum(unemployed),
+         total.pills = sum(DOSAGE_UNIT),
+         total.lf = sum(labor.force),
+         total.pop = sum(population)) %>%
+  select(BUYER_STATE, total.un, total.pills, total.lf, total.pop, year) %>%
+  mutate(norm.pills = total.pills / total.pop,
+         un.rate = (total.un / total.lf) * 100) %>%
+  unique() %>%
+  ungroup()
+
+figcap.state = paste0("Scatter Plot of Relationship between Unemployment and Per Capita Opioid Pill Shipments for n = ", nrow(state.relationship), " Observations at the State-level")
+
+
+```
+
+```{r StatePlot, fig.cap = figcap.state, echo = FALSE, message = FALSE}
+
+ggplot(data = state.relationship, aes(x = un.rate, y = norm.pills)) +
+  geom_point(size = 0.5) +
+  geom_smooth(se = FALSE,
+              size = 0.5,
+              color = "magenta4",
+              method = "lm") +
+  theme_classic(base_size = 9) +
+  ggtitle("Relationship of Unemployment and Opioid Pill Shipments at the State-level (2006-2014)") +
+  xlab("Unemployment Rate (%)") +
+  ylab("Per Capita Opioid Pill Shipments")
+
+```
+
+Fig. \@ref(fig:StatePlot) displays per capita Opioid pill shipments in relation to unemployment rates at the state-level from 2006-2014. It should be noted that "state-level" was defined as any of the 50 U.S. states and Washington D.C. Every point represents a single state during a single year based on its unemployment rate and per capita Opioid pill shipments at that time. In general, the plot suggests that higher rates of unemployment are associated with higher rates of per capita Opioid pill shipments at the state-level.
+
+```{r caption4, include = FALSE}
+
+figcap.county = paste0("Scatter Plot of Relationship between Unemployment and Per Capita Opioid Pill Shipments for n = ", nrow(final.merged), " Observations at the U.S. County-level.")
+
+```
+
+```{r CountyPlot, fig.cap = figcap.county, echo = FALSE, message = FALSE}
+
+#Relationship between unemployment and pill shipments at the county level
+
+final.merged %>%
+  mutate("Urban Level" = large_urban) %>%
+  ggplot(aes(x = unemployed.rate, y = norm_dose)) +
+  geom_point(size = 0.5) +
+  geom_smooth(aes(color = `Urban Level`),
+              se = FALSE,
+              size = 1,
+              method = "lm") +
+  ggtitle("Relationship of Unemployment and Opioid Pill Shipments at the County-level (2006-2014)") +
+  xlab("Unemployment Rate (%)") +
+  ylab("Per Capita Opioid Pill Shipments") +
+  theme_classic(base_size = 9)
+
+```
+
+Fig. \@ref(fig:CountyPlot) displays per capita Opioid pill shipments in relation to unemployment rates at the county-level from 2006-2014. Every point represents a single county during a single year based on its unemployment rate and per capita Opioid pill shipments at that time. Fig. \@ref(fig:CountyPlot) also suggests a relationship between unemployment and Opioid pill shipments, with higher rates of unemployment generally associated with higher rates of per capita Opioid shipments at the county-level. Additionally, the plot suggests that the relationship between unemployment and per capita Opioid pill shipments differs between urban levels, which may be an effect modifier.
+
+```{r caption5, include = FALSE}
+
+#Changes in unemployment regionwide
+
+unemployment.region <- final.merged %>%
+  group_by(Region, year) %>%
+  mutate(total.unemployed = sum(unemployed),
+         total.lf = sum(labor.force)) %>%
+  select(year, Region, total.unemployed, total.lf) %>%
+  mutate(region.unemployment = (total.unemployed / total.lf) * 100) %>%
+  select(-total.unemployed, -total.lf) %>%
+  unique() %>%
+  ungroup()
+
+un.region.plot <- unemployment.region %>%
+  ggplot(aes(x = year, y = region.unemployment, group = Region, color = Region)) +
+  geom_line_interactive(aes(tooltip = Region,
+                             data_id = Region)) +
+  theme_classic(base_size = 9) +
+  theme(legend.position = "none") +
+  ggtitle("Unemployment Rate by U.S. Region") +
+  xlab("Year") +
+  ylab("Unemployment Rate (%)")
+
+#Changes in pill shipments statewide
+
+pills.region <- final.merged %>%
+  group_by(Region, year) %>%
+  mutate(total.pills = sum(DOSAGE_UNIT),
+         total.population = sum(population)) %>%
+  select(year, total.pills, Region, total.population) %>%
+  mutate(norm.state = total.pills / total.population) %>%
+  select(year, Region, total.pills, norm.state) %>%
+  unique() %>%
+  ungroup()
+
+pills.region.plot <- pills.region %>%
+  ggplot(aes(x = year, y = norm.state, group = Region, color = Region)) +
+  theme_classic(base_size = 9) +
+  ggtitle("Regionwide Per Capita Opioid Pill Shipments") +
+  xlab("Year") +
+  ylab("Per Capita Opioid Pills Shipped") +
+  geom_line_interactive(aes(tooltip = Region,
+                             data_id = Region)) +
+  theme(legend.position = "none")
+
+#Combined, interactive statewide plot
+
+combinedregionplot <-
+  un.region.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  pills.region.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  plot_annotation(title = "Socioeconomic and Behavioral Trends by U.S. Region (2006-2014)")
+
+figcap.region = paste0("Combined Plots of Unemployment, n = ", nrow(pills.region), " Observations, and Per Capita Opioid Pill Shipment Trends, n = ", nrow(unemployment.region), " Observations, at the U.S. Region-Level. Hover for more detail.")
+
+
+```
+
+```{r regioninteractive, fig.cap = figcap.region, echo = FALSE, message = FALSE}
+
+girafe(ggobj = combinedregionplot, width_svg = 8, height_svg = 6,
+  options = list(
+    opts_hover_inv(css = "opacity:0.1;"),
+    opts_hover(css = "stroke-width:2;")
+  ))
+
+```
+
+Fig. \@ref(fig:regioninteractive) displays how Opioid pill shipments and unemployment have changed across U.S. regions, which were based on [U.S. Census definitions](https://www2.census.gov/geo/pdfs/maps-data/maps/reference/us_regdiv.pdf). Broadly, previous relationships visualized at the state and national-level hold, with unemployment and Opioid pill shipments featuring a sharp rise and decline from 2006-2014. The plot further suggests that the relationship between unemployment and Opioid pill shipments varies geographically. The South had the highest rates of Opioid pills shipped in this period, with the Northeast having the lowest. 
+
+```{r caption6, include = FALSE}
+
+#Relationship between unemployment and pill shipments regionwide
+
+region.relationship.data <- final.merged %>%
+  group_by(Region, year) %>%
+  mutate(total.un = sum(unemployed),
+         total.pills = sum(DOSAGE_UNIT),
+         total.lf = sum(labor.force),
+         total.pop = sum(population)) %>%
+  select(Region, total.un, total.pills, total.lf, total.pop, year) %>%
+  mutate(norm.pills = total.pills / total.pop,
+         un.rate = (total.un / total.lf) * 100) %>%
+  unique() %>%
+  ungroup()
+
+figcap.region.data = paste0("Scatter Plot of Relationship between Unemployment and Per Capita Opioid Pill Shipments for n = ", nrow(region.relationship.data), " Observations at the U.S. Region-level. Hover for more detail.")
+
+
+```
+
+```{r regionplot, fig.cap = figcap.region.data, echo = FALSE, message = FALSE}
+
+region.int <- ggplot(data = region.relationship.data, aes(x = un.rate, y = norm.pills)) +
+  geom_point(aes(color = Region),
+             size = 0.5) +
+  geom_smooth_interactive(aes(color = Region,
+                              tooltip = Region,
+                              data_id = Region),
+              se = FALSE,
+              size = 0.5,
+              method = "lm") +
+  theme_classic(base_size = 9) +
+  ggtitle("Relationship of Unemployment and Opioid Pill Shipments by U.S. Region (2006-2014)") +
+  xlab("Unemployment Rate (%)") +
+  ylab("Per Capita Opioid Pill Shipments")
+
+girafe(ggobj = region.int, width_svg = 8, height_svg = 6,
+  options = list(
+    opts_hover_inv(css = "opacity:0.1;"),
+    opts_hover(css = "stroke-width:2;")
+  ))
+
+
+```
+Fig. \@ref(fig:regionplot) displays per capita Opioid pill shipments in relation to unemployment at the U.S. region-level from 2006-2014. Regions were based on definitions from the U.S. Census. Every point represents a single region during a single year based on its unemployment rate and per capita Opioid pill shipments at that time. In general, the plot suggests that higher rates of unemployment are associated with higher rates of per capita Opioid pill shipments at the region-level.
+
+```{r caption7, include = FALSE}
+
+#Changes in unemployment regionwide
+
+unemployment.division <- final.merged %>%
+  group_by(Division, year) %>%
+  mutate(total.unemployed = sum(unemployed),
+         total.lf = sum(labor.force)) %>%
+  select(year, Division, total.unemployed, total.lf) %>%
+  mutate(division.unemployment = (total.unemployed / total.lf) * 100) %>%
+  select(-total.unemployed, -total.lf) %>%
+  unique() %>%
+  ungroup()
+
+un.division.plot <- unemployment.division %>%
+  ggplot(aes(x = year, y = division.unemployment, group = Division, color = Division)) +
+  geom_line_interactive(aes(tooltip = Division,
+                             data_id = Division)) +
+  theme_classic(base_size = 9) +
+  theme(legend.position = "none") +
+  ggtitle("Unemployment Rate by U.S. Division") +
+  xlab("Year") +
+  ylab("Unemployment Rate (%)")
+
+#Changes in pill shipments statewide
+
+pills.division <- final.merged %>%
+  group_by(Division, year) %>%
+  mutate(total.pills = sum(DOSAGE_UNIT),
+         total.population = sum(population)) %>%
+  select(year, total.pills, Division, total.population) %>%
+  mutate(norm.state = total.pills / total.population) %>%
+  select(year, Division, total.pills, norm.state) %>%
+  unique() %>%
+  ungroup()
+
+pills.division.plot <- pills.division %>%
+  ggplot(aes(x = year, y = norm.state, group = Division, color = Division)) +
+  theme_classic(base_size = 9) +
+  ggtitle("Divisionwide Per Capita Opioid Pill Shipments") +
+  xlab("Year") +
+  ylab("Per Capita Opioid Pills Shipped") +
+  geom_line_interactive(aes(tooltip = Division,
+                             data_id = Division)) +
+  theme(legend.position = "none")
+
+#Combined, interactive statewide plot
+
+combineddivisionplot <-
+  un.division.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  pills.division.plot + 
+  theme(axis.text.x = element_text(angle = 90)) +
+  plot_annotation(title = "Socioeconomic and Behavioral Trends by U.S. Division (2006-2014)")
+
+figcap.division = paste0("Combined Plots of Unemployment, n = ", nrow(pills.division), " Observations, and Per Capita Opioid Pill Shipment Trends, n = ", nrow(unemployment.division), " Observations, at the U.S. Division-Level. Hover for more detail.")
+
+```
+
+```{r divisioninteractive, fig.cap = figcap.division, echo = FALSE, message = FALSE}
+
+girafe(ggobj = combineddivisionplot, width_svg = 8, height_svg = 6,
+  options = list(
+    opts_hover_inv(css = "opacity:0.1;"),
+    opts_hover(css = "stroke-width:2;")
+  ))
+
+```
+
+Fig. \@ref(fig:divisioninteractive) displays how Opioid pill shipments and unemployment have changed across U.S. divisions, which were based on U.S. Census definitions. In general, previous relationships still hold. There was a historical increase in both unemployment and Opioid pill shipments from 2006-2014, with a decline in later years during this period. The plot also displays clear geographical trends in the U.S. The East South Central division had much higher rates of per capita Opioid pill shipments than any other U.S. division, reaching a peak of `r pills.division %>% filter(Division == "East South Central" & year == 2011) %>% select(norm.state) %>% pull() %>% format(digits = 3)` per capita Opioid pills shipped in 2011. In that same year, New England had the lowest rate with `r pills.division %>% filter(Division == "New England" & year == 2011) %>% select(norm.state) %>% pull() %>% format(digits = 3)` per capita Opioid pills shipped. 
+
+```{r caption8, include = FALSE}
+
+#Relationship between unemployment and pill shipments regionwide
+
+division.relationship.data <- final.merged %>%
+  group_by(Division, year) %>%
+  mutate(total.un = sum(unemployed),
+         total.pills = sum(DOSAGE_UNIT),
+         total.lf = sum(labor.force),
+         total.pop = sum(population)) %>%
+  select(Division, total.un, total.pills, total.lf, total.pop, year) %>%
+  mutate(norm.pills = total.pills / total.pop,
+         un.rate = (total.un / total.lf) * 100) %>%
+  unique() %>%
+  ungroup()
+
+figcap.division.data = paste0("Scatter Plot of Relationship between Unemployment and Per Capita Opioid Pill Shipments for n = ", nrow(division.relationship.data), " Observations at the U.S. Division-level. Hover for more detail.")
+
+
+```
+
+```{r divisionplot, fig.cap = figcap.region.data, echo = FALSE, message = FALSE}
+
+divisionint <- ggplot(data = division.relationship.data, aes(x = un.rate, y = norm.pills)) +
+  geom_point(aes(color = Division),
+             size = 0.5) +
+  geom_smooth_interactive(aes(tooltip = Division,
+                             data_id = Division,
+                             color = Division),
+                          se = FALSE,
+                          size = 0.5,
+                          method = "lm") +
+  theme_classic(base_size = 9) +
+  ggtitle("Relationship of Unemployment and Opioid Pill Shipments by U.S. Division (2006-2014)") +
+  xlab("Unemployment Rate (%)") +
+  ylab("Per Capita Opioid Pill Shipments")
+
+
+girafe(ggobj = divisionint, width_svg = 8, height_svg = 6,
+  options = list(
+    opts_hover_inv(css = "opacity:0.1;"),
+    opts_hover(css = "stroke-width:2;")
+  ))
+
+
+
+```
+Fig. \@ref(fig:divisionplot) displays per capita Opioid pill shipments in relation to unemployment at the U.S. division-level from 2006-2014. Divisions were based on definitions from the U.S. Census. Every point represents a single division during a single year based on its unemployment rate and per capita Opioid pill shipments at that time. In general, the plot suggests that higher rates of unemployment are associated with higher rates of per capita Opioid pill shipments at the division-level.
+
+## Summary of Exploratory Data Analysis
+
+Fig. \@ref(fig:nationalplot), \@ref(fig:stateinteractiveplot), \@ref(fig:regioninteractive), and \@ref(fig:divisioninteractive) display historical trends in unemployment rates and per capita Opioid shipments in the U.S. at the national, state, regional, and division-level, respectively. These plots illustrate that both unemployment and per capita Opioid pill shipments experienced similar overall trends from 2006-2014, with upticks to about 2010 followed by decline. These plots also depict that there is geographic variation within these two rates, with some regions exhibiting particuarly high rates of unemployment or per capita Opioid shipments.
+
+Fig. \@ref(fig:StatePlot), \@ref(fig:CountyPlot), \@ref(fig:regionplot), and \@ref(fig:divisionplot) display the relationship between unemployment rates and per capita Opioid pill shipments at the state, county, regional, and division-level, respectively. In general, these plots all suggest that higher rates of unemployment are associated with higher rates of per capita Opioid pill shipments. This association varies geographically and across urban levels.
+
+Taken together, these plots suggest that unemployment is associated with per capita Opioid pill shipments, and that this relationship varies by U.S. region, division, state, and urban level. 
+
+# Modeling Opioid Pill Shipments in the U.S.
+
+In order to represent the relationship between Opioid pill shipments and unemployment, three potential models were built based on our background knowledge concerning Opioid use and our previous visualizations. Below are the models that were evaluated:
+
+
+Model A:
+$$E[Per \ Capita\ Opioid \ Pills \ Shipped] = \beta_0i + \beta_1 \cdot Unemployment \cdot Urban + \beta_2 \cdot Year + \beta_3 \cdot Division$$
+
+Model B:
+$$E[Per \ Capita \ Opioid \ Pills \ Shipped] = \beta_0i + \beta_1 \cdot Unemployment \cdot Urban + \beta_2 \cdot Year + \beta_3 \cdot Region$$
+
+Model C:
+$$\log (Per \ Capita \ Opioid \ Pill \ Shipments) = \log(Population) + \beta_0 + \beta_1 \cdot Unemployment \cdot Urban + \beta_2 \cdot Year$$
+All of the models include urban level as an effect modifier, based on the results of Fig. \@ref(fig:CountyPlot). Since unemployment and Opioid pill shipments had large temporal changes at all levels, the year was included as an adjustment variable in all of the models as well (Figs. \@ref(fig:nationalplot), \@ref(fig:stateinteractiveplot), \@ref(fig:regioninteractive), \@ref(fig:divisioninteractive)). Additionally, Model A and Model B differed by their geographic adjustment variable based on observed relationships between unemployment and per capita Opioid pill shipments at the division and regional level (Figs. \@ref(fig:regionplot) and \@ref(fig:divisionplot)).
+
+```{r Poissonreg, include = FALSE, echo = FALSE}
+
+#Poisson regression
+
+tests <- final.merged %>%
+  mutate(round.du = round(DOSAGE_UNIT))
+
+model3 <- glm(round.du ~ unemployed.rate*large_urban + year, data = tests, offset = log(population), family = poisson(link = "log"))
+summary(model3)
+
+X2 = sum(residuals(model3, type = "pearson")^2); df = model3$df.residual
+pval = 1 - pchisq(X2, df)
+pgf <- paste0("Pearson goodness of fit = ", round(X2, 4), ", df = ", df, ", p-value = ", round(pval, 4))
+
+```
+
+Model C utilized a Poisson regression using county population as an offset. The model was evaluated using the Pearson Goodness of Fit test. This resulted in a goodness of fit value of `r X2 %>% format(digits = 2, scientific = TRUE)` with a p-value of `r round(pval, 1)`. Therefore, there was significant deviation from a Poisson distribution and a Poisson regression would not be appropriate to model the relationship of interest. Model C was removed for consideration and the remaining two linear models were then evaluated.
+
+```{r allmodels, echo = FALSE, include = FALSE, message = FALSE}
+
+model1 <- lmerTest::lmer(norm_dose ~ unemployed.rate*large_urban + year + Division + (1 | BUYER_COUNTY), data = final.merged, REML = TRUE)
+
+model2 <- lmerTest::lmer(norm_dose ~ unemployed.rate*large_urban + year + Region + (1 | BUYER_COUNTY), data = final.merged, REML = TRUE)
+
+model4 <- lm(norm_dose ~ unemployed.rate*large_urban + year + Region + Division + BUYER_STATE, data = final.merged)
+
+```
+
+The data utilized is longitudinal and measurements from the same county over time may be correlated with one another. To account for this, we included a random intercept for each county *i*, designated by the $\beta_{0i}$ in the equations above for Models A and B.
+
+```{r modelmaking, echo = FALSE, include = FALSE}
+
+model1results <- tidy(model1,
+                      conf.int = TRUE)
+
+model1results$term <- c("Intercept",
+                        "Unemployment",
+                        "Large Urban",
+                        "Year",
+                        "East South Central",
+                        "Mid Atlantic",
+                        "Mountain",
+                        "New England",
+                        "Pacific",
+                        "South Atlantic",
+                        "West North Central",
+                        "West South Central",
+                        "Unemployment-Urban Interaction",
+                        "sd_intercept",
+                        "sd__Observation")
+
+
+tablea <- model1results %>%
+  filter(term != "Intercept",
+         term != "sd_intercept",
+         term != "sd__Observation") %>%
+  mutate(conf = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")"),
+         `Expected Change in Per Capita Opioid Pill Shipments` = estimate,
+         `p-Value` = formatC(p.value, digits = 1, format = "e")) %>%
+  select(Term = term,
+         `Expected Change in Per Capita Opioid Pill Shipments`,
+         `p-Value`,
+         `95% Confidence Interval` = conf)
+
+model2results <- tidy(model2,
+                      conf.int = TRUE)
+
+model2results$term <- c("Intercept",
+                        "Unemployment",
+                        "Large Urban",
+                        "Year",
+                        "Northeast",
+                        "South",
+                        "West",
+                        "Unemployment-Urban Interaction",
+                        "sd_intercept",
+                        "sd__Observation")
+
+tableb <- model2results %>%
+  filter(term != "Intercept",
+         term != "sd_intercept",
+         term != "sd__Observation") %>%
+  mutate(conf = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")"),
+         `Expected Change in Per Capita Opioid Pill Shipments` = estimate,
+         `p-Value` = formatC(p.value, digits = 1, format = "e")) %>%
+  select(Term = term,
+         `Expected Change in Per Capita Opioid Pill Shipments`,
+         `p-Value`,
+         `95% Confidence Interval` = conf)
+
+```
+
+```{r finaltablea, echo = FALSE}
+finaltablea <- tablea %>%
+  mutate(`Expected Change in Per Capita Opioid Pill Shipments` = round(`Expected Change in Per Capita Opioid Pill Shipments`, 2)) %>% 
+  kable(format = "html",
+        align = c("l", "r", "r", "r"),
+        caption = "Results of Linear Regression Using Model A") %>%
+  kable_styling("striped") %>%
+  add_footnote(c("The baseline reference for urban level is small urban or rural.", "The baseline reference for division is East North Central."), notation = "number")
+
+finaltablea
+
+```
+
+Table \@ref(tab:finaltablea) displays the results of Model A. Holding all other variables constant, counties have an estimated increase of `r tablea %>% filter(Term == "Unemployment") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments with a 1% increase in the unemployment rate (p = `r tablea %>% filter(Term == "Unemployment") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). An increase of one year (during 2006-2014) was estimated to increase per capita Opioid pill shipments by `r tablea %>% filter(Term == "Year") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` compared to the previous year at the county-level (p < 0.001). Geographic divisions were found to be statistically significant covariates (p < 0.05), with the exception of the Mountain division (p = `r tablea %>% filter(Term == "Mountain") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). These division-level estimates were based off East North Central as a baseline reference. Large urban counties were estimated to have an increase of `r tablea %>% filter(Term == "Large Urban") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments compared to rural or small urban counties (p = `r tablea %>% filter(Term == "Large Urban") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). The effect of unemployment on per capita Opioid pill shipments in large urban counties is estimated to be `r tablea %>% filter(Term == "Unemployment-Urban Interaction") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 2)` lower than the effect of unemployment on rural or small urban counties (p = `r tablea %>% filter(Term == "Unemployment-Urban Interaction") %>% select("p-Value") %>% pull() %>% format(digits = 1)`).
+
+```{r finaltableb, echo = FALSE}
+finaltableb <- tableb %>%
+  mutate(`Expected Change in Per Capita Opioid Pill Shipments` = round(`Expected Change in Per Capita Opioid Pill Shipments`, 2)) %>%
+  kable(format = "html",
+        align = c("l", "r", "r", "r"),
+        caption = "Results of Linear Regression Using Model B") %>%
+  kable_styling("striped") %>%
+  add_footnote(c("The baseline reference for urban level is small urban or rural.", "The baseline reference for region is the Midwest."), notation = "number")
+
+finaltableb
+```
+
+
+Table \@ref(tab:finaltableb) displays the results of Model B. Holding all other variables constant, counties have an estimated increase of `r tableb %>% filter(Term == "Unemployment") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments with a 1% increase in the unemployment rate (p < 0.001). An increase of one year (during 2006-2014) was estimated to increase per capita Opioid pill shipments by `r tableb %>% filter(Term == "Year") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` compared to the previous year at the county-level (p < 0.001). Geographic regions were found to be statistically significant covariates (p < 0.05), with the exception of the Northeast region (p = `r tableb %>% filter(Term == "Northeast") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). These region-level estimates were based off the Midwest as a baseline reference. Large urban counties were estimated to have an increase of `r tableb %>% filter(Term == "Large Urban") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments compared to rural or small urban counties (p = `r tableb %>% filter(Term == "Large Urban") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). The effect of unemployment on per capita Opioid pill shipments in large urban counties is estimated to be `r tableb %>% filter(Term == "Unemployment-Urban Interaction") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 2)` lower than the effect of unemployment on rural or small urban counties (p = `r tableb %>% filter(Term == "Unemployment-Urban Interaction") %>% select("p-Value") %>% pull() %>% format(digits = 1)`).
+
+
+```{r aictest, include = FALSE, echo = FALSE, message = FALSE}
+
+aictest <- AIC(model1, model2, model4)
+
+aicvector <- aictest[, "AIC"]
+modelvector <- c("Model A", "Model B", "Comparison Model")
+
+aictab <- data.frame(modelvector, aicvector)
+
+```
+
+```{r aictable, echo = FALSE}
+aiccomp <- aictab %>%
+  select(Model = modelvector, 
+         AIC = aicvector) %>%
+  kable(format = "html",
+        caption = "AIC Comparison of Models",
+        align = c("l", "r")) %>%
+  kable_styling("striped")
+
+aiccomp
+```
+
+Table \@ref(tab:aictable) displays the results of an AIC test on Model A, B, and a comparison model. The comparison model included urban levels as an effect modifier and year, region, division, and state as adjustment variables. Model A had a lower AIC value compared to Model B (`r aictab %>% filter(modelvector == "Model A") %>% select("aicvector") %>% pull() %>% format(scientific = FALSE)` compared to `r aictab %>% filter(modelvector == "Model B") %>% select("aicvector") %>% pull() %>% format(scientific = FALSE)`). Model A also had a lower AIC value compared to the comparison model (`r aictab %>% filter(modelvector == "Model A") %>% select("aicvector") %>% pull() %>% format(scientific = FALSE)` compared to `r aictab %>% filter(modelvector == "Comparison Model") %>% select("aicvector") %>% pull() %>% format(scientific = FALSE)`).
+
+### Summary of Statistical Analyses
+
+Three models, two using a linear regression and one using a Poisson regression, were created and evaluated to model the relationship of interest. Model C was removed from consideration due to having statistically significant deviation from a Poisson distribution. Models A and B both utilized a random intercept for each county *i* and differed with the geographic covariate they utilized, division or region, respectively. The results of these two models are displayed in Tables \@ref(tab:finaltablea) and \@ref(tab:finaltableb).
+
+Models A and B were evaluated based on the statistical significance of their estimates and their AIC values (Table \@ref(tab:aictable)). Each model had one statistically insignificant variable, Mountain for Model A (p = `r tablea %>% filter(Term == "Mountain") %>% select("p-Value") %>% pull() %>% format(digits = 1)`) and Northeast for Model B (p = `r tableb %>% filter(Term == "Northeast") %>% select("p-Value") %>% pull() %>% format(digits = 1)`). An AIC test comparing Model A, B, and a comparison model resulted in Model A having the lowest AIC value (`r aictab %>% filter(modelvector == "Model A") %>% select("aicvector") %>% pull() %>% format(scientific = FALSE)`).
+
+Due to the results of these analyses, Model A was selected as the appropriate model to represent the relationship between unemployment and per capita Opioid pill shipments at the county level. Holding all other variables constant, we estimate that an increase of 1% in unemployment is associated with an increase of `r tablea %>% filter(Term == "Unemployment") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments at the county level (p < 0.001) with a 95% confidence interval of `r tablea %>% filter(Term == "Unemployment") %>% select("95% Confidence Interval") %>% pull()`.
+
+### Directed Acyclic Graph (DAG)
+
+<center>
+
+![Figure 9: Relationship Between Unemployment and Opioid Pill Shipments.](DAG.jpeg)
+
+</center>
+
+Based off of previous visualizations and Model A, our selected model, there is evidence that a relationship exists between unemployment and per capita Opioid pill shipments, with year and U.S. division as confounding variables, urban level as an effect modifier, and also a random effect from associated county measurements. The above directed acyclic graph illustrates this hypothesized relationship.
+
+# Summary of Findings
+
+From our visualizations, a relationship exists between unemployment and per capita Opioid pill shipments (Figs. \@ref(fig:StatePlot), \@ref(fig:CountyPlot)). This relationship varies by year, U.S. region, and U.S. division (Figs. \@ref(fig:nationalplot), \@ref(fig:regionplot), \@ref(fig:divisionplot)). Additionally, urban level is an effect modifier of this relationship (Fig. \@ref(fig:CountyPlot)). From these visualizations, a series of models were built and evaluated to model the relationship of interest. Ultimately, Model A was selected to model the relationship between unemployment and per capita Opioid pill shipments. 
+
+From our analyses, there is a relationship between unemployment and per capita Opioid pill shipments, specifically county-level shipments of oxycodone or hydrocodone. A limitation of this analysis was that there is no known, national-level dataset on Opioid pill use. As a result, Opioid pill shipments were used as a proxy to examine this relationship. Pills shipped to pharmacies may not be utilized by residents of that county and pill shipments may not necessarily indicate higher usage. [However, a 2021 study by Griffith et al.](https://pubmed.ncbi.nlm.nih.gov/33421805/) found that "a one-pill increase in [per capita pill volume] was associated with a 0.20 increase in [Opioid-related deaths] per 100,000 population (95% CI 0.11-0.30)." Therefore, we infer that per capita Opioid pill shipments can be used to indirectly answer our question of interest. 
+
+From Model A (Table \@ref(tab:finaltablea)), we can answer our question of interest: *Is there a relationship between prescription Opioid use and unemployment?*
+
+Holding all other variables constant, we estimate that an increase of 1% in unemployment is associated with an increase of `r tablea %>% filter(Term == "Unemployment") %>% select("Expected Change in Per Capita Opioid Pill Shipments") %>% pull() %>% format(digits = 3)` in per capita Opioid pill shipments at the county level (p < 0.001) with a 95% confidence interval of `r tablea %>% filter(Term == "Unemployment") %>% select("95% Confidence Interval") %>% pull()`.
+
+There were also other limitations associated with the data sets used. The Open Case Studies Project data set did not include information on all U.S. counties. Additionally, data was only available on two common Opioids: oxycodone and hydrocodone. The data also was limited to a range of years with extreme economic characteristics (2006-2014), taking place during the middle of the Great Recession and following recovery. 
+
+Despite the limitations of this analysis, it suggests that there are important relationships to consider between economic conditions and health behaviors, specifically those relating to substance use. The Opioid epidemic remains one of the most pressing health challenges in the U.S. Analyses such as this may contribute toward our understanding of the growth and development of this epidemic and the prevention of future ones.

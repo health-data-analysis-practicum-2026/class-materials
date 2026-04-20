@@ -1,0 +1,820 @@
+---
+title: "Final Project"
+author: "Justus Alfaro"
+date: "April 6, 2025"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+<style type="text/css">
+   .main-container {max-width: 100%;}
+   .row {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.column {
+  flex: 50%;
+  padding: 10px;
+  box-sizing: border-box;
+  min-width: 320px; 
+  
+}
+.MathJax_Display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+</style>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+```{r libraries, include=FALSE}
+library(tidyverse)
+library(knitr)  # to make nice tables
+library(ggpubr)
+library(ggrepel)
+library(kableExtra)
+library(survival)
+library(survminer)
+library(ggsurvfit)
+library(magick)
+
+library(broom)
+library(grid)
+
+
+dat2 <- read_csv("data/cancer2.csv")
+```
+
+
+### Question of interest
+
+What is the relationship between time from diagnosis to treatment and overall survival time in patients with invasive ductal carcinoma (IDC)?
+
+### Data and EDA
+
+```{r data, include=FALSE}
+# eventually you will include code to load your data here
+# For the sake of simplification of the model given time, would it be okay to censor 
+cancerDat <- dat2 %>%
+  select(ID = `Patient ID`,
+         site = `Site recode ICD-O-3/WHO 2008`,
+         age = `Age recode with single ages and 90+`,
+         sex = Sex,
+         cancerDeath = `SEER cause-specific death classification`,
+         otherDeath = `SEER other cause of death classification`,
+         survTime = `Survival months`,
+         survTimeFlag = `Survival months flag`,
+         status = `Vital status recode (study cutoff used)`,
+         timeToTreat = `Time from diagnosis to treatment in days recode`,
+         countyType = `Rural-Urban Continuum Code`, #No effect
+         countyIncome = `Median household income inflation adj to 2022`,#Maybe effect
+         tumorSize = `Tumor Size Over Time Recode (1988+)`, #might cut this one as i want to ignore repeat diagnoses
+         stage = `Breast - Adjusted AJCC 6th Stage (1988-2015)`,
+         married = `Marital status at diagnosis`, #No effect
+         surgeRad = `RX Summ--Surg/Rad Seq`, #Dont worry
+         surgeChemo = `RX Summ--Systemic/Sur Seq (2007+)`, #Don't worry. Could be a sub analysis
+         repeatedDiagnosis = `SS seq # 2000+ - mal+ins (most detail)`, # also might cut this one, same as above
+         race = `Race and origin recode (NHW, NHB, NHAIAN, NHAPI, Hispanic) - no total`,
+         chemo = `Chemotherapy recode (yes, no/unk)`,
+         rad = `Radiation recode`,
+         surgery = `Reason no cancer-directed surgery`,
+         diagnosisYear = `Year of diagnosis`
+         ) %>%
+  filter(timeToTreat != "731+ days" & timeToTreat != "Unable to calculate") %>%
+  filter(diagnosisYear >= 2005 & diagnosisYear <= 2015)
+
+cancerDat$timeToTreat <- as.numeric(cancerDat$timeToTreat)
+cancerDat$survTime <- as.numeric(cancerDat$survTime)
+cancerDat$age <- as.numeric(gsub("\\+", "", (gsub(" years", "", cancerDat$age))))
+
+
+incomeMap <- c(
+  "$120,000+" = "More Than Median Income",
+  "$110,000 - $119,999" = "More Than Median Income",
+  "$100,000 - $109,999" = "More Than Median Income",
+  "$95,000 - $99,999" = "More Than Median Income",
+  "$90,000 - $94,999" = "More Than Median Income",
+  "$85,000 - $89,999" = "More Than Median Income",
+  "$80,000 - $84,999" = "More Than Median Income",
+  "$75,000 - $79,999" = "More Than Median Income",
+  "$70,000 - $74,999" = "More Than Median Income",
+  "$65,000 - $69,999" = "More Than Median Income",
+  "$60,000 - $64,999" = "More Than Median Income",
+  "$55,000 - $59,999" = "More Than Median Income",
+  "$50,000 - $54,999" = "More Than Median Income",
+  "$45,000 - $49,999" = "Less Than Median Income",
+  "$40,000 - $44,999" = "Less Than Median Income",
+  "< $40,000" = "Less Than Median Income"
+)
+
+
+countyMap <- c(
+  "Counties in metropolitan areas ge 1 million pop" = "Medium or Large City",
+  "Counties in metropolitan areas of 250,000 to 1 million pop" = "Medium or Large City",
+  "Counties in metropolitan areas of lt 250 thousand pop" = "Small City",
+  "Nonmetropolitan counties adjacent to a metropolitan area" = "Suburb",
+  "Nonmetropolitan counties not adjacent to a metropolitan area" = "Rural"
+)
+
+
+monthlyDays <- 365.24 / 12
+cancerDat <- cancerDat %>%
+  mutate(causeOfDeath = case_when( #Setting up var for competing causes
+            status == "Alive" ~ 0,
+            cancerDeath == "Dead (attributable to this cancer dx)" ~ 1,
+            otherDeath == "Dead (attributable to causes other than this cancer dx)" ~ 2,
+            otherDeath == "Dead (missing/unknown COD)" ~ 2),
+        causeOfDeath = factor(causeOfDeath),
+        # status = recode(status,
+        #                 "Alive" = 0,
+        #                 "Dead" = 1),
+        startMonth = round(timeToTreat / 30),
+        married = factor(married,
+          levels = c("Single (never married)", "Married (including common law)",
+                      "Widowed", "Separated", "Divorced",
+                      "Unknown", "Unmarried or Domestic Partner"),
+          labels = c("Single", "Married", "Widowed", "Separated",
+                      "Divorced", "Unknown", "Unmarried or Domestic Partner")),
+        stage = factor(stage,
+          levels = c("I", "IIA", "IIB", "IIIA", "IIIB",
+                      "IIIC", "IIINOS", "IV", "UNK Stage")),
+        
+        # censored = case_when(
+        #   status == 0 | status == 2 ~ 0,
+        #   status == 1 ~ 1),
+        censored = case_when(
+          causeOfDeath == 0 | causeOfDeath == 2 ~ 0,
+          causeOfDeath == 1 ~ 1),
+        timeAtRisk = (survTime * 30) - timeToTreat,
+        status = factor(status),
+        surgery = case_when(
+          surgery == "Recommended but not performed, unknown reason" ~ 2,
+          surgery == "Recommended but not performed, patient refused" ~ 2,
+          surgery == "Surgery performed" ~ 1,
+          TRUE ~ 0),
+        rad = case_when(
+          rad == "None/Unknown" ~ 0,
+          TRUE ~ 1),
+        chemo = case_when(
+          chemo == "Yes" ~ 1,
+          TRUE ~ 0
+        ),
+        treatmentType = case_when(
+          surgery == 0 & chemo == 0 & rad == 0 ~ 0,
+          surgery == 1 & chemo == 0 & rad == 0 ~ 1,
+          surgery == 0 & chemo == 1 & rad == 0 ~ 2,
+          surgery == 0 & chemo == 0 & rad == 1 ~ 3,
+          surgery == 1 & chemo == 1 & rad == 0 ~ 4,
+          surgery == 1 & chemo == 0 & rad == 1 ~ 5,
+          surgery == 0 & chemo == 1 & rad == 1 ~ 6,
+          surgery == 1 & chemo == 1 & rad == 1 ~ 7),
+        treatmentType = factor(treatmentType,
+          levels = c(0:7),                  
+          labels = c("No Treatment", "Surgery Only", "Chemo Only",
+                     "Radiation Only", "Surgery and Chemo", 
+                     "Surgery and Radiation", "Radiation and Chemo",
+                     "All treatments")),
+        treatFact = case_when(
+        timeToTreat > 30 ~ "Long",
+        TRUE ~ "Short"),
+        treatFact = factor(treatFact,
+          levels = c("Short", "Long")),
+        sampleStage = case_when(
+          stage == "I" ~ "I",
+          stage == "IIB" | stage == "IIA" ~ "II",
+          stage == "IIIA" | stage == "IIIB" | stage == "IIIC" | stage == "IIINOS" ~ "III",
+          stage == "IV" ~ "IV",
+          stage == "UNK Stage" ~ "UNK Stage"),
+        sampleStage = factor(sampleStage),
+        treatWeeks = floor(timeToTreat / monthlyDays),
+        surgeryTreat = case_when(
+          rad == 1 & surgery == 1 ~ "Surgery and other",
+          chemo == 1 & surgery == 1 ~ "Surgery and other",
+          chemo == 0 & rad == 0 & surgery == 1 ~ "Surgery only",
+          TRUE ~ "Non-Surgical Treatment"),
+        surgeryTreat = factor(surgeryTreat,
+          levels = c("Non-Surgical Treatment", "Surgery only", "Surgery and other")),
+        countyIncomeGroup = factor(countyIncome, levels = names(incomeMap)),
+        countyIncomeGroup = incomeMap[as.character(countyIncome)],
+        countyIncomeGroup = factor(countyIncomeGroup, levels = unique(incomeMap)),
+        
+        countyType = factor(countyType, levels = names(countyMap)),
+        countyType = countyMap[as.character(countyType)],
+        countyType = factor(countyType, levels = unique(countyMap)),
+        race = case_when(
+          race == "Non-Hispanic White" ~ "White",
+          race == "Hispanic (All Races)" ~ "Hispanic",
+          race == "Non-Hispanic Black" ~ "Black",
+          race == "Non-Hispanic Asian or Pacific Islander" ~ "Asian or Pacific Islander",
+          race == "Non-Hispanic American Indian/Alaska Native" ~ "Native American",
+          race == NA ~ "Unknown"),
+        race = factor(race, levels = c("White", "Hispanic", "Black", "Asian or Pacific Islander", "Native American")),
+        countyIncome = factor(countyIncome,
+          levels = c("< $40,000", "$40,000 - $44,999", "$45,000 - $49,999",
+                     "$50,000 - $54,999", "$55,000 - $59,999",
+                     "$60,000 - $64,999", "$65,000 - $69,999",
+                     "$70,000 - $74,999", "$75,000 - $79,999",
+                     "$80,000 - $84,999", "$85,000 - $89,999",
+                     "$90,000 - $94,999", "$95,000 - $99,999",
+                     "$100,000 - $109,999", "$110,000 - $119,999",
+                     "$120,000+"))) %>%
+  filter(timeAtRisk > 0)
+colorblindPalette <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", 
+                "#D55E00", "#CC79A7", "#999999", "#660066", "red", "blue")
+
+
+
+#Exploration of the number of people with repeated cases
+#I am deciding whether to include them in my cohort
+uniquePatients <- cancerDat %>%
+  select("ID") %>%
+  n_distinct
+numRepeatedCases <- count(cancerDat) - uniquePatients
+#print(numRepeatedCases)
+
+
+cancerDat <- cancerDat %>%
+  group_by(ID) %>%
+  mutate(numCases = case_when(
+    n() == 1 ~ "No Repeats",
+    TRUE ~ "Repeated Cases"),
+    numCases = factor(numCases)) %>%
+  ungroup() %>%
+  distinct(ID, .keep_all = TRUE)
+
+
+```
+
+This analysis uses the SEER database, a cancer registry maintained by the NIH that collects detailed, individual information on cancer diagnosis, treatment, and follow up. Although not a national cancer registry, SEER collects data from 14 states, which represent approximately 48% of the US population, with records dating back to the 1970s. For the purposes of this study, I restricted the cohort to patients diagnosed between 2005 and 2015 in order to balance a modern cohort while retaining sufficient follow up time (through 2021). In line with survival analysis best practices, I verified that there was not a significant change in treatment efficacy across diagnosis years. The cohort was composed of patients who were below the age of 90 and received treatment. The follow up time began after treatment was started. Since survival time was in months, and time to treatment was in days, the time at risk was constructed as $\text{Time at Risk} = \text{Survival Months} * 30 - \text{Time to Treatmnet}$. A limitation of this approach is that those with a survival time of less than one month would have a negative time at risk. As there were only `r count(cancerDat, survTime)[1,2]` individuals with this survival time, I decided to exclude them from the cohort. After these selection steps, the cohort was comprised of `r count(cancerDat)` individuals.
+\
+\
+```{r 5 year survival,fig.height=5, fig.width=12}
+
+five_year_survival <- cancerDat %>%
+  mutate(status = case_when(
+    status == 0 ~ 0,
+    survTime > 60 ~ 0,
+    TRUE ~ 1
+  ),
+  diagnosisYear = factor(diagnosisYear),
+  status = factor(status)) %>%
+  select(status, diagnosisYear, sampleStage, survTime, numCases)
+
+
+overall_survival <- five_year_survival %>%
+  filter(sampleStage != "UNK Stage") %>%
+  count(diagnosisYear, sampleStage, status) %>%
+  group_by(diagnosisYear, sampleStage) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  filter(status == 0) %>%
+ggplot(aes(x = diagnosisYear, y = percent, fill = sampleStage)) +
+  geom_col(fill = "steelblue") +
+  facet_wrap(~sampleStage) +
+  labs(
+    title = "5-Year Survival Rate by Diagnosis Year and Stage",
+    x = "Diagnosis Year",
+    y = "Percent Survived",
+    fill = "Stage"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+recurrence_survival <- five_year_survival %>%
+  filter(sampleStage != "UNK Stage") %>%
+  count(numCases, status) %>%
+  group_by(numCases) %>%
+  mutate(percent = round(n / sum(n) * 100, 1)) %>%
+  filter(status == 0) %>%
+ggplot(aes(x = numCases, y = percent)) +
+  geom_col(fill = "steelblue") +
+  labs(
+    title = "5-Year Survival Rate Stratified by Recurrence",
+    x = "Diagnosis Year",
+    y = "Percent Survived",
+    fill = "Stage"
+  )
+ggarrange(overall_survival, recurrence_survival, ncol = 2)
+```
+\
+\
+
+#### Racial Breakdown 
+
+The cohort's racial distribution heavily overrepresents white patients. While the majority of the US population white, every other racial group has a significantly lower percent representation than would be expected if the data collection were unbiased. For example, Hispanic patients comprise only `r round(mean(cancerDat$race == "Hispanic", na.rm = TRUE) * 100, 1)`% of the sample, despite accounting for 19.5% of the US population. This suggests a bias in the registry, possibly due to reduced access to treatment for racial minorities. Due to this, the generalizability of these findings is limited. 
+\
+\
+<div class = "row">
+<div class = "column">
+
+```{r racial distribution}
+
+p <- cancerDat %>%
+  drop_na(race) %>%
+  count(race) %>%
+  mutate(n2 = n) %>%
+  mutate(n2 = ifelse(race == "White", 7400, n)) %>%
+  ggplot(aes(x = race, y = n2)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  ylab("Count") +
+  xlab(NULL) +
+  theme_light() +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1, vjust = 0.9), 
+        axis.title.x = element_text(vjust = 2,  color = "black")) +
+  geom_text(aes(label = paste0("n = ", n)), vjust = -0.5, size = 3.2, color = "#393939" ) +
+  scale_y_continuous(
+    limits = c(-0.1, 8500),
+    breaks = c(0, 2500, 5000, 7500),
+    labels = c("0", "2,500", "5,000", "40,000")) + 
+   annotate("polygon",
+           x = c(0.5, 1.5, 1.5, 0.5),     # Creates the slash through bar
+           y = c(5450, 6650, 6950, 5750),    
+           fill = "white", color = "white") +
+  annotate("line", 
+           x = c(0.5, 1.5),
+           y = c(5450, 6650))  +
+  annotate("line", 
+           x = c(0.5, 1.5),
+           y = c(5750, 6950))
+
+g <- ggplotGrob(p)
+
+# Slash through y-axis
+grid.newpage()
+grid.draw(g)
+grid.polygon(x = unit(c(0.08, 0.08, 0.11, 0.11), "npc"),  
+             y = unit(c(0.715, 0.74, 0.763, 0.74), "npc"),
+             gp = gpar(fill = "white", col = "white"))
+
+grid.lines(x = unit(c(0.08, 0.11), "npc"),
+           y = unit(c(0.74, 0.763), "npc"),
+           gp = gpar(col = "black"), "npc")
+
+grid.lines(x = unit(c(0.08, 0.11), "npc"),
+           y = unit(c(0.715, 0.74), "npc"),
+           gp = gpar(col = "black"), "npc")
+
+```
+
+</div>
+
+<div class = "column">
+```{r racial distribution table, fig.height=10}
+
+sample_props <- cancerDat %>%
+  count(race) %>%
+  mutate(`Sample Population Percent` = round(n / sum(n) * 100, 1)) %>%
+  select(race, `Sample Population Percent`)
+
+racialDistributions <- tibble(
+  Race = c("White", "Hispanic", "Black", "Asian or Pacific Islander", "Native American"),
+  `US Population Percent` = c(58.4, 19.5, 13.7, 6.7, 1.3)
+) %>%
+  left_join(sample_props, by = c("Race" = "race"))
+racialDistributions %>% 
+  kable()
+```
+
+</div>
+</div>
+
+
+
+#### Time to Treatment EDA
+
+To explore the effect of confounders on my question of interest, I made Kaplan Meier curves which were stratified by potential confounders. Since it is easiest to compare two curves, I split time to treatment into a factor variable, with "long" and "short" groups using 30 days as the cutoff. However, this threshold gave counterintuitive results, as longer treatment delays seemingly indicated improved survival. However, this finding could be due to confounding, as disease severity or treatment type could effect survival time and time to treatment.
+\
+\
+```{r Time to Treat Plot, fig.height=5, fig.width=12}
+
+treatDistribution <- cancerDat %>%
+  ggplot() +
+  geom_histogram(aes(x = timeToTreat), binwidth = 1) + 
+  xlim(0, 100) + #excluding t = 0 since the spike makes this harder to see
+  #geom_vline(xintercept = 52, color = "black", linetype = "longdash")
+  #geom_vline(xintercept = 67, color = "midnightblue", linetype = "longdash") + 
+  geom_vline(xintercept = 31, color = "steelblue", linetype = "longdash") + 
+  ylim(0, 1500) +
+  labs(title = "Distribution of time to treatment and Kaplan Meier Analysis")
+
+
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ as.character(treatFact) , data = cancerDat)
+#For some reason when I facet (below), it sorts my strata alphabetically. 
+#I'm converting it to a character here so that this auto-sorts it alphabetically
+km <-  ggsurvplot(KMFit, data = cancerDat,
+                #scales = "free_y",  # Each facet gets its own y scale
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                ylim = c(0.75, 1),
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment",
+                legend.labs = c("Long", "Short"))
+
+ggarrange(treatDistribution, km$plot, ncol = 2)
+```
+
+\
+To be thorough, I created additional Kaplan Meier curves controlling for both stage and treatment type simultaneously. In contrast to the crude analysis, the curves across every stratified group were very similar. Interestingly, the type of surgery received does not seem to affect the shape of the survival curve.
+\
+\
+
+####  {.unnumbered .tabset .tabset-pills}
+<span style="display: none;">&nbsp;</span>
+
+##### Overall {.unnumbered}
+```{r Kaplan Meier 0}
+
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ treatFact + surgeryTreat, data = cancerDat %>% filter(sampleStage != "UNK Stage"))
+km0 <-  ggsurvplot_facet(KMFit, data = cancerDat,
+                facet.by = "surgeryTreat",
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment and Treatment Type",
+                subtitle = "For Stage I Patients",
+                short.panel.labs = TRUE,
+                nrow = 2)
+km0
+
+```
+
+##### Stage I {.unnumbered}
+
+```{r Kaplan Meier 1}
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ treatFact + surgeryTreat, data = cancerDat %>% filter(sampleStage == "I"))
+km1 <-  ggsurvplot(KMFit, data = cancerDat,
+                facet.by = "surgeryTreat",
+                #scales = "free_y",  # Each facet gets its own y scale
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment and Treatment Type",
+                subtitle = "For Stage I Patients",
+                short.panel.labs = TRUE,
+                nrow = 2)
+km1
+```
+
+##### Stage II {.unnumbered}
+
+```{r Kaplan Meier 2}
+
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ treatFact + surgeryTreat, data = cancerDat %>% filter(sampleStage == "II"))
+km2 <-  ggsurvplot(KMFit, data = cancerDat,
+                facet.by = "surgeryTreat",
+                #scales = "free_y",  # Each facet gets its own y scale
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment and Treatment Type",
+                subtitle = "For Stage II Patients",
+                short.panel.labs = TRUE,
+                nrow = 2)
+km2
+```
+
+##### Stage III {.unnumbered}
+
+```{r Kaplan Meier 3}
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ treatFact + surgeryTreat, data = cancerDat %>% filter(sampleStage == "III"))
+km3 <-  ggsurvplot(KMFit, data = cancerDat,
+                facet.by = "surgeryTreat",
+                #scales = "free_y",  # Each facet gets its own y scale
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment and Treatment Type",
+                subtitle = "For Stage III Patients",
+                short.panel.labs = TRUE,
+                nrow = 2)
+km3
+```
+
+##### Stage IV {.unnumbered}
+
+```{r Kaplan Meier 4}
+KMFit <- survfit(Surv(timeAtRisk, censored) ~ treatFact + surgeryTreat, data = cancerDat %>% filter(sampleStage == "IV"))
+km4 <-  ggsurvplot(KMFit, data = cancerDat,
+                facet.by = "surgeryTreat",
+                #scales = "free_y",  # Each facet gets its own y scale
+                palette = colorblindPalette,
+                censor = FALSE,
+                conf.int = TRUE,
+                xlab = "Time (Days)", ylab = "Survival Probability",
+                title = "Survival Probability by Time to Treatment and Treatment Type",
+                subtitle = "For Stage IV Patients",
+                short.panel.labs = TRUE,
+                nrow = 2)
+km4
+```
+
+#### {.unnumbered}
+
+Though I stratified the time to treatment for visualization, I do plan to use a continuous variable in my analysis. In order to explore the continuous relationship, I also plotted a smoothed line representing the survival time as a function of time to treatment (excluding censored cases), which showed no major trends. Though significantly longer delays appear to have worse survival outcomes, this could be due to smaller sample sizes in the tail of the distribution.
+\
+\
+```{r t3 and survival months, figure.height = 100}
+set.seed(123)
+sampleDat <- cancerDat %>%
+  filter(timeToTreat != 0, status != "Alive")
+sampleDat <- sampleDat[sample(nrow(cancerDat), 18000),] #Sampling roughly half the population for ease of visuals
+
+zoomOut <- sampleDat %>%
+  ggplot() +
+  geom_point(aes(x = timeToTreat, y = (timeAtRisk / monthlyDays)), alpha = .05, color = "steelblue") +
+  geom_smooth(aes(x = timeToTreat, y = timeAtRisk/monthlyDays)) +
+  theme(legend.position = "top") + 
+  labs(title = "Survival Time by Time to Treatment",
+       subtitle = "With Focus on 1-100 Days to Treatment") +
+  xlab(NULL) + 
+  ylab("Survival Time")
+  
+zoomIn <- sampleDat %>%
+  ggplot() +
+  geom_point(aes(x = timeToTreat, y = (survTime)), alpha = .05, color = "steelblue") +
+  geom_smooth(aes(x = timeToTreat, y = survTime)) +
+  xlim(0, 100) +
+  theme(legend.position = "false") +
+  labs(x = "Survival Time (Months)", y = "Time to Treatment", title = "")
+ggarrange(zoomOut, zoomIn, nrow = 2, label.y = -2)
+```
+
+### Analysis Summary
+#### Variables of interest
+
+* **Outcome variable: Survival Time**
+* **Primary predictor variable: Time between diagnosis and treatment**
+* **Possible confounders: Age, Stage, Treatment Type, Cancer Recurrence**
+* **Potential effect modifiers: Stage at Diagnosis Against Age**
+
+#### Directed acyclic graph (DAG)
+
+![](DAG.png)
+\
+
+#### Statistical analysis plan
+
+In doing this statistical analysis, I played around with including various variables that my EDA (not pictured above) flagged as potentially interesting. These included marriage status, race, and whether this was a repeated diagnosis. My primary criteria was to utilize p-values and AIC scores in order to determine what model had the best fit. Through this, I excluded multiple variables, including county income, level of urbanization, and race.
+\
+
+### Statistical Analysis
+```{r Fitting Cox Model 1, fig.width= 15, fig.height= 10}
+cancerDat <- cancerDat %>%
+  mutate(centeredAge = age - median(cancerDat$age))
+
+fit1 <- coxph(Surv(timeAtRisk, causeOfDeath) ~ timeToTreat + sampleStage*centeredAge + surgeryTreat + numCases, 
+              data = cancerDat, id = ID) #Multi-state model
+
+model1 <- tidy(fit1, exponentiate = TRUE, conf.int = TRUE) %>%
+  mutate(term = gsub("surgeryTreat", "", term),
+         term = gsub("timeToTreat", "Time to Treatment", term),
+         term = gsub(" Stage", "", term),
+         term = gsub("sampleStage", "Stage ", term),
+         term = gsub("_1:2", "", term),
+         term = gsub("_1:3", "Other Death", term),
+         term = gsub("centeredAge", "Age", term),
+         term = gsub("treatmentType", "", term),
+         term = gsub(":", " : ", term),
+         term = gsub("stage", "Stage", term),
+         term = gsub("diagnosisYear", "Diagnosis Year", term),
+         term = gsub("numCases", "", term),
+         `conf.int` = paste0("(", round(conf.low, digits = 2),", ", round(conf.high, digits = 2),")")) %>%
+  filter(!str_detect(term, "Other Death")) %>%
+  select(Term = term,
+         `Hazard Ratio` = estimate,
+         `P-value` = p.value,
+         `95% Confidence Interval` = conf.int) #%>%
+  #kable(digits = 3)
+
+```
+
+```{r Fitting Cox Model 2}
+
+
+fit2 <- coxph(Surv(timeAtRisk, causeOfDeath) ~ timeToTreat + sampleStage + centeredAge + surgeryTreat + numCases, 
+              data = cancerDat, id = ID) #Multi-state model
+
+model2 <- tidy(fit2, exponentiate = TRUE, conf.int = TRUE) %>%
+  mutate(term = gsub("surgeryTreat", "", term),
+         term = gsub("timeToTreat", "Time to Treatment", term),
+         term = gsub(" Stage", "", term),
+         term = gsub("sampleStage", "Stage ", term),
+         term = gsub("_1:2", "", term),
+         term = gsub("_1:3", "Other Death", term),
+         term = gsub("centeredAge", "Age", term),
+         term = gsub("treatmentType", "", term),
+         term = gsub(":", " : ", term),
+         term = gsub("stage", "Stage", term),
+         term = gsub("diagnosisYear", "Diagnosis Year", term),
+         term = gsub("numCases", "", term),
+         `conf.int` = paste0("(", round(conf.low, digits = 2),", ", round(conf.high, digits = 2),")")) %>%
+  filter(!str_detect(term, "Other Death")) %>%
+  select(Term = term,
+         `Hazard Ratio` = estimate,
+         `P-value` = p.value,
+         `95% Confidence Interval` = conf.int)# %>%
+  #kable(digits = 3)
+
+
+```
+
+#### Model Summary
+```{r Visualizing Model}
+joinedTibble <- right_join(model2, model1, by = "Term", suffix = c(".Wt", ".noWt"))
+options(knitr.kable.NA = '—')
+
+comp_tbl <- joinedTibble %>%
+  select(Term, `Hazard Ratio` = `Hazard Ratio.Wt`, `95% Confidence Interval` = `95% Confidence Interval.Wt`, `P-value` = `P-value.Wt`, `Hazard Ratio ` = `Hazard Ratio.noWt`,`95% Confidence Interval ` = `95% Confidence Interval.noWt`, `P-value ` = `P-value.noWt`) %>% 
+  kable(format = "html",
+        digits = 2) %>%
+  add_header_above(c(" ","No Interaction" = 3, "Interaction" = 3))%>%
+  kable_styling(full_width = TRUE)
+comp_tbl
+```
+
+#### Non-interaction Model
+The Cox model found essentially no association between time to treatment and hazard of death (HR = `r round(model2 %>% filter(Term == "Time to Treatment") %>% pull("Hazard Ratio"), 2)`, 95% CI: `r model2 %>% filter(Term == "Time to Treatment") %>% pull("95% Confidence Interval")`). Given our preliminary analysis, this finding is not surprising. In contrast, every confounding variable had significant associations. 
+
+In the non-interaction model, each year increase in age increases the hazard of death by `r round(round((model2 %>% filter(Term == "Age") %>% pull("Hazard Ratio") - 1) * 100, 0),2)`% (95% CI: `r model2 %>% filter(Term == "Age") %>% pull("95% Confidence Interval")`). Advanced stages were associated with dramatically increased hazard. Stage II had `r round(model2 %>% filter(str_detect(Term, "Stage II")) %>% pull("Hazard Ratio"), 2)` times the hazard (95% CI: `r model2 %>% filter(str_detect(Term, "Stage II")) %>% pull("95% Confidence Interval")`), stage III had `r round(model2 %>% filter(str_detect(Term, "Stage III")) %>% pull("Hazard Ratio"), 1)` times (95% CI: `r model2 %>% filter(str_detect(Term, "Stage III")) %>% pull("95% Confidence Interval")`), and stage IV had an exceptionally high effect, at `r round(model2 %>% filter(str_detect(Term, "Stage IV")) %>% pull("Hazard Ratio"), 2)` times the hazard (95% CI: `r model2 %>% filter(str_detect(Term, "Stage IV")) %>% pull("95% Confidence Interval")`).
+
+Regarding treatment type, patients receiving surgery alone (HR = `r round(model2 %>% filter(str_detect(Term, "Surgery only")) %>% pull("Hazard Ratio"), 2)`, 95% CI: `r model2 %>% filter(str_detect(Term, "Surgery only")) %>% pull("95% Confidence Interval")`) or with another treatment (HR = `r round(model2 %>% filter(str_detect(Term, "Surgery and other")) %>% pull("Hazard Ratio"), 2)`, 95% CI: `r model2 %>% filter(str_detect(Term, "Surgery and other")) %>% pull("95% Confidence Interval")`) had much lower hazard of death than those who received non-surgical treatment (baseline). The model also found that patients with repeated diagnoses had a significantly higher hazard (HR = `r round(model2 %>% filter(str_detect(Term, "Repeated Cases")) %>% pull("Hazard Ratio"), 2)`, 95% CI: `r model2 %>% filter(str_detect(Term, "Repeated Cases")) %>% pull("95% Confidence Interval")`).
+
+#### Interaction Model
+
+In the interaction model, I sought to compare how the effect of advanced cancer stages varied by patient age. The age variable was centered around the median age (`r median(cancerDat$age)`) of the study population. Thus, for individuals age `r median(cancerDat$age)`, the hazard of death with stage IV is`r round(model1 %>% filter(str_detect(Term, "Stage IV$")) %>% pull("Hazard Ratio"),2)`
+ times higher than those with stage I cancer. Surprisingly, the model found that the effect of stage IV cancer weakened by approximately `r round((1 - model1 %>% filter(str_detect(Term, "Stage IV : Age")) %>% pull("Hazard Ratio")) * 100, 1)`% per year of age (95% CI: `r model1 %>% filter(str_detect(Term, "Stage IV : Age")) %>% pull("95% Confidence Interval")`) above or below the median.
+ \
+ 
+### Validating Assumptions
+
+A core assumption of the Cox model is the proportionality of hazards over time. In order to evaluate this assumption I examined the Schoenfeld residuals, a standard diagnostic tool. Ideally residuals should be randomly distributed about 0, and a smoothed line should show no variation in time (i.e., have a slope of 0). For most covariates this assumption held true. However, both treatment type and stage showed minor violations. Their residuals were centered around non-zero values. As well, stage had a slight downward trend and treatment time had an initial spike. These violations indicate that the proportional hazards model may be imperfect for these covariates, though the effects appear fairly subtle and should thus not meaningfully affect the model results.
+\
+
+```{r validating assumptions, figure.width = 100, figure.height = 50, out.width="100%"}
+#fit1Resids <- cox.zph(fit1)
+#fit2Resids <- cox.zph(fit2)
+#fit3Resids <- cox.zph(fit3) #Not valid for this model type
+fit4Resids <- cox.zph(fit1)
+
+df <- data.frame(
+  time = fit4Resids$time,
+  treatFactResids = fit4Resids$y[, "timeToTreat_1:2"],
+  ageResids = fit4Resids$y[, "centeredAge_1:2"],
+  surgeryResids = fit4Resids$y[, "surgeryTreat_1:2"],
+  stageResids = fit4Resids$y[, "sampleStage_1:2"],
+  repeatResids = fit4Resids$y[, "numCases_1:2"]
+  #smooth = fit4Resids$yhat[, varname]
+)
+
+schoenTtT <- ggplot(data = df,  aes(x = time, y = treatFactResids)) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue", size = 1.2) +
+  geom_point(alpha = 0.005) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = paste("Time to Treatment"),
+    x = "Time", y = "Schoenfeld Residuals"
+  )
+
+schoenAge<- ggplot(data = df,  aes(x = time, y = ageResids)) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue", size = 1.2) +
+  geom_point(alpha = 0.01) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = paste("Age"),
+    x = "Time", y = "Schoenfeld Residuals"
+  )
+
+schoenStage<- ggplot(data = df,  aes(x = time, y = stageResids)) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue", size = 1.2) +
+  geom_point(alpha = 0.01) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = paste("Stage"),
+    x = "Time", y = "Schoenfeld Residuals"
+  )
+
+schoenSurgery <- ggplot(data = df,  aes(x = time, y = surgeryResids)) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue", size = 1.2) +
+  geom_point(alpha = 0.01) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = paste("Treatment Type"),
+    x = "Time", y = "Schoenfeld Residuals"
+  )
+
+schoenRepeat <- ggplot(data = df,  aes(x = time, y = repeatResids)) +
+  geom_smooth(method = "loess", se = TRUE, color = "steelblue", size = 1.2) +
+  geom_point(alpha = 0.005) + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = paste("Repeat Cases"),
+    x = "Time", y = "Schoenfeld Residuals"
+  )
+
+ggarrange(ggarrange(schoenTtT, schoenAge, schoenStage, ncol= 3), 
+          ggarrange(schoenSurgery,schoenRepeat, ncol = 2), 
+          nrow = 2) 
+
+```
+
+### Limitations
+
+Due to the nature of this dataset, many of the demographic variables were unreliable. Income was only available at the county level, which may not necessarily reflect the true income of an individual. Although race is usually a proxy for income and access, the underrepresentation of minorities made it an unreliable variable. Due to these limitations, any demographic variables included in the model would not have been generalizable outside this cohort. Furthermore, the bias may have contributed to the lack of statistical significance in my initial models. 
+
+The other major limitation of this analysis comes from the structure of the study. Since the follow up began at the initiation of treatment, individuals who had a longer time to treatment necessarily survived long enough to receive treatment, which potentially introduced survivorship bias and may have confounded the results.
+
+
+### Cox Proportional Hazards Model
+
+
+
+
+<div class="row">
+<div class = "column">
+
+#### Basic Structure
+
+Let \( X_i = (X_{i1}, \dots, X_{ip}) \) be the realized covariates for subject \( i \).
+
+The model is defined by:
+
+\[
+\begin{aligned}
+\lambda(t \mid X_i) &= \lambda_0(t) \cdot \exp(\beta_1 X_{i1} + \dots + \beta_p X_{ip}) \\
+                    &= \lambda_0(t) \cdot \exp(\beta \cdot X_i)
+\end{aligned}
+\]
+
+Where \( \lambda(t \mid X_i) \) is the hazard function of individual \( i \) at time \( t \), and \( \lambda_0 \) is a baseline, unknown hazard function.
+
+For two individuals \( i \) and \( j \), the ratio of their hazards is:
+
+\[
+\frac{\lambda(t \mid X_i)}{\lambda(t \mid X_j)} = 
+\frac{\exp(\beta_1 X_{i1} + \dots + \beta_p X_{ip})}{\exp(\beta_1 X_{j1} + \dots + \beta_p X_{jp})}
+\]
+
+Note that \( \lambda_0(t) \) cancels out, so the hazard ratio is time-invariant.
+
+Now consider a model with only one covariate, where \( X_{i, \text{stageIV}} = X_{j, \text{stageIV}} + 1 \):
+
+\[
+\begin{aligned}
+\text{HR} &= 
+\frac{\exp(\beta_1 X_{i1})}{\exp(\beta_1 X_{j1})} \\
+&= \exp\left[\beta_1 (X_{i1} - X_{j1})\right] \\
+&= \exp(\beta)
+\end{aligned}
+\]
+
+Thus, the hazard ratio between these two individuals can be represented by \( \exp(\beta) \).
+
+</div>
+<div class = "column">
+
+#### Interaction
+
+Assuming all covariates except the interaction term are baseline:
+
+\[
+\text{HR} = \frac{
+\exp(\beta_{\text{StageIV}} X_{\text{StageIV}} + \beta_{\text{Age}} X_{\text{Age}} + \beta_{\text{Interaction}} X_{\text{StageIV}} X_{\text{Age}})
+}{
+\exp(\beta_{\text{StageIV}} X_{\text{StageIV}} + \beta_{\text{Age}} X_{\text{Age}} + \beta_{\text{Interaction}} X_{\text{StageIV}} X_{\text{Age}})
+}
+\]
+
+Now assume same age for both individuals:
+
+\[
+\begin{aligned}
+\text{HR} &= 
+\frac{
+\exp(\beta_{\text{StageIV}} X_{\text{StageIV}} + \beta_{\text{Interaction}} X_{\text{StageIV}} X_{\text{Age}})
+}{
+\exp(\beta_{\text{StageIV}} X_{\text{StageIV}} + \beta_{\text{Interaction}} X_{\text{StageIV}} X_{\text{Age}})
+} \\
+&= \exp\left[\beta_{\text{StageIV}} (X_i - X_j)\right] \cdot \exp\left[\beta_{\text{Interaction}} X_{\text{Age}} (X_i - X_j)\right]
+\end{aligned}
+\]
+
+If \( X_i = X_j + 1 \), then:
+
+\[
+\text{HR} = \exp(\beta_{\text{StageIV}}) \cdot \exp(\beta_{\text{Interaction}} \cdot X_{\text{Age}})
+\]
+
+Thus, the interaction term multiplicatively modifies the effect of Stage IV with respect to age.
+
+</div>
+</div>
